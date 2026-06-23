@@ -1,0 +1,83 @@
+# =============================================================
+# Trading Expert — Docker Compose
+# =============================================================
+# Start all services:
+#   docker compose up -d
+#
+# View logs:
+#   docker compose logs -f
+#
+# Stop:
+#   docker compose down
+# =============================================================
+
+services:
+  # --- Redis (message broker for Celery) ---
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # --- Celery Worker (processes tasks) ---
+  worker:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    command: celery -A trading_expert.tasks.celery_app worker --loglevel=info --concurrency=2
+    healthcheck:
+      test: ["CMD", "celery", "-A", "trading_expert.tasks.celery_app", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # --- Celery Beat (scheduler) ---
+  beat:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    command: celery -A trading_expert.tasks.celery_app beat --loglevel=info
+    healthcheck:
+      test: ["CMD", "celery", "-A", "trading_expert.tasks.celery_app", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # --- CLI / Manual analysis container ---
+  app:
+    build: .
+    stdin_open: true
+    tty: true
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    command: python -m trading_expert.cli watch
+
+volumes:
+  redis_data:

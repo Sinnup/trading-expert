@@ -1,0 +1,75 @@
+# =============================================================
+# Trading Expert — Alert Thresholds
+# =============================================================
+
+# Score thresholds that trigger alerts
+# Score range: -1.0 (strong sell) to +1.0 (strong buy)
+
+alerts:
+  strong_buy:
+    min_score: 0.6
+    label: "🟢 STRONG BUY"
+    emoji: "📈"
+
+  buy:
+    min_score: 0.4
+    label: "🟢 BUY"
+    emoji: "📈"
+
+  weak_buy:
+    min_score: 0.2
+    label: "🟡 WEAK BUY"
+    emoji: "↗️"
+
+  hold:
+    min_score: -0.19
+    max_score: 0.19
+    label: "⚪ HOLD"
+    emoji: "➡️"
+
+  weak_sell:
+    max_score: -0.2
+    label: "🟡 WEAK SELL"
+    emoji: "↘️"
+
+  sell:
+    max_score: -0.4
+    label: "🔴 SELL"
+    emoji: "📉"
+
+  strong_sell:
+    max_score: -0.6
+    label: "🔴 STRONG SELL"
+    emoji: "🚨"
+
+# Urgency triggers (keywords that escalate priority)
+urgency_keywords:
+  critical:
+    - "FDA"
+    - "acquisition"
+    - "bankruptcy"
+    - "restructuring"
+    - "layoff"
+    - "guidance raised"
+    - "guidance lowered"
+    - "profit warning"
+    - "preliminary results"
+    - "export ban"
+    - "sanctions"
+    - "CHIPS act"
+    - "merger"
+    - "activist investor"
+    - "CEO resigns"
+    - "CEO fired"
+
+  high:
+    - "earnings beat"
+    - "earnings miss"
+    - "new product"
+    - "deal signed"
+    - "partnership"
+    - "supply shortage"
+    - "capacity expansion"
+    - "price target"
+    - "upgrade"
+    - "downgrade"

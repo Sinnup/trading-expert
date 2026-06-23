@@ -1,0 +1,409 @@
+# =============================================================
+# Trading Expert — Company Universe & Supply Chain Map
+# =============================================================
+# All tracked companies with their supply chain relationships.
+# The cascade engine uses this graph to trace how events at one
+# company propagate to others.
+# =============================================================
+
+tickers:
+  # =========================================
+  # US Semiconductor Designers
+  # =========================================
+  - ticker: NVDA
+    name: NVIDIA
+    sector: gpu_ai
+    role: fabless_designer
+    region: us
+    weight: 1.0  # Primary focus
+
+  - ticker: AMD
+    name: Advanced Micro Devices
+    sector: cpu_gpu
+    role: fabless_designer
+    region: us
+    weight: 1.0
+
+  - ticker: INTC
+    name: Intel
+    sector: cpu_foundry
+    role: designer_foundry
+    region: us
+    weight: 1.0
+
+  - ticker: AVGO
+    name: Broadcom
+    sector: networking_ai
+    role: fabless_designer
+    region: us
+    weight: 1.0
+
+  - ticker: QCOM
+    name: Qualcomm
+    sector: mobile_iot
+    role: fabless_designer
+    region: us
+    weight: 0.8
+
+  - ticker: MRVL
+    name: Marvell Technology
+    sector: networking
+    role: fabless_designer
+    region: us
+    weight: 0.7
+
+  - ticker: MU
+    name: Micron Technology
+    sector: memory
+    role: designer_foundry
+    region: us
+    weight: 0.8
+
+  - ticker: TXN
+    name: Texas Instruments
+    sector: analog
+    role: designer_foundry
+    region: us
+    weight: 0.7
+
+  - ticker: ADI
+    name: Analog Devices
+    sector: analog
+    role: fabless_designer
+    region: us
+    weight: 0.6
+
+  - ticker: ON
+    name: ON Semiconductor
+    sector: power_auto
+    role: designer_foundry
+    region: us
+    weight: 0.6
+
+  - ticker: MCHP
+    name: Microchip Technology
+    sector: microcontrollers
+    role: designer_foundry
+    region: us
+    weight: 0.5
+
+  # =========================================
+  # Semiconductor Equipment
+  # =========================================
+  - ticker: ASML
+    name: ASML Holding
+    sector: equipment
+    role: equipment_maker
+    region: europe
+    note: "Only EUV lithography supplier — critical chokepoint"
+    weight: 1.0
+
+  - ticker: AMAT
+    name: Applied Materials
+    sector: equipment
+    role: equipment_maker
+    region: us
+    weight: 0.8
+
+  - ticker: LRCX
+    name: Lam Research
+    sector: equipment
+    role: equipment_maker
+    region: us
+    weight: 0.8
+
+  - ticker: KLAC
+    name: KLA Corporation
+    sector: equipment
+    role: equipment_maker
+    region: us
+    weight: 0.7
+
+  # =========================================
+  # Foundries
+  # =========================================
+  - ticker: TSM
+    name: TSMC
+    sector: foundry
+    role: pure_foundry
+    region: taiwan
+    note: "World's largest contract fab — every designer depends on them"
+    weight: 1.0
+
+  - ticker: SMIC
+    name: SMIC
+    sector: foundry
+    role: pure_foundry
+    region: china
+    note: "China's leading foundry — geopolitical risk factor"
+    weight: 0.6
+
+  - ticker: 688981.SS
+    name: Hua Hong Semiconductor
+    sector: foundry
+    role: pure_foundry
+    region: china
+    weight: 0.4
+
+  # =========================================
+  # Memory (Asia)
+  # =========================================
+  - ticker: 005930.KS
+    name: Samsung Electronics
+    sector: memory_logic_foundry
+    role: designer_foundry
+    region: korea
+    weight: 0.8
+
+  - ticker: 000660.KS
+    name: SK Hynix
+    sector: memory
+    role: designer_foundry
+    region: korea
+    note: "HBM memory leader — critical for NVIDIA AI GPUs"
+    weight: 0.8
+
+  # =========================================
+  # Hyperscalers / Big Tech
+  # =========================================
+  - ticker: AAPL
+    name: Apple
+    sector: consumer_tech
+    role: customer_designer
+    region: us
+    weight: 1.0
+
+  - ticker: MSFT
+    name: Microsoft
+    sector: cloud_ai
+    role: customer
+    region: us
+    weight: 1.0
+
+  - ticker: GOOGL
+    name: Alphabet
+    sector: cloud_ai
+    role: customer_designer
+    region: us
+    weight: 1.0
+
+  - ticker: AMZN
+    name: Amazon
+    sector: cloud_retail
+    role: customer_designer
+    region: us
+    weight: 1.0
+
+  - ticker: META
+    name: Meta Platforms
+    sector: social_ai
+    role: customer_designer
+    region: us
+    weight: 1.0
+
+  # =========================================
+  # Mobile / IoT / Licensing
+  # =========================================
+  - ticker: 2454.TW
+    name: MediaTek
+    sector: mobile_chips
+    role: fabless_designer
+    region: taiwan
+    weight: 0.6
+
+  - ticker: ARM
+    name: Arm Holdings
+    sector: ip_licensing
+    role: ip_provider
+    region: uk
+    note: "CPU architecture licensor — entire mobile/IoT ecosystem depends on them"
+    weight: 0.8
+
+  # =========================================
+  # Industrial / Automotive
+  # =========================================
+  - ticker: IFNNY
+    name: Infineon Technologies
+    sector: auto_industrial
+    role: designer_foundry
+    region: europe
+    weight: 0.6
+
+  - ticker: STM
+    name: STMicroelectronics
+    sector: auto_industrial
+    role: designer_foundry
+    region: europe
+    weight: 0.5
+
+# =========================================
+# Supply Chain Graph
+# =========================================
+# Format:
+#   ticker:
+#     depends_on: [who supplies them]
+#     supplies_to: [who they sell to]
+#     competes_with: [direct competitors]
+#
+# Used by the cascade engine to propagate signals.
+# Example: ASML has EUV delay → TSM can't expand capacity →
+#          NVDA/AMD can't ship chips → MSFT/AAPL capex impact.
+# =========================================
+
+supply_chain:
+  # --- Equipment Makers ---
+  ASML:
+    depends_on: []
+    supplies_to: [TSM, INTC, SMIC, 005930.KS, 688981.SS]
+    competes_with: []
+    bottleneck: true  # Only EUV source — any disruption cascades globally
+
+  AMAT:
+    depends_on: []
+    supplies_to: [TSM, INTC, SMIC, 005930.KS, MU, 000660.KS]
+    competes_with: [LRCX, KLAC]
+
+  LRCX:
+    depends_on: []
+    supplies_to: [TSM, INTC, SMIC, 005930.KS, MU, 000660.KS]
+    competes_with: [AMAT, KLAC]
+
+  KLAC:
+    depends_on: []
+    supplies_to: [TSM, INTC, SMIC, 005930.KS]
+    competes_with: [AMAT, LRCX]
+
+  # --- Foundries ---
+  TSM:
+    depends_on: [ASML, AMAT, LRCX, KLAC]
+    supplies_to: [NVDA, AMD, AVGO, QCOM, AAPL, INTC, MRVL, 2454.TW]
+    competes_with: [INTC, 005930.KS, SMIC]
+    bottleneck: true  # ~60% of world's advanced chips
+
+  SMIC:
+    depends_on: [AMAT, LRCX]
+    supplies_to: [688981.SS]
+    competes_with: [TSM, 005930.KS]
+    sanctions_risk: true
+
+  688981.SS:
+    depends_on: [SMIC, AMAT]
+    supplies_to: []
+    competes_with: [TSM, SMIC]
+    sanctions_risk: true
+
+  005930.KS:
+    depends_on: [ASML, AMAT, LRCX]
+    supplies_to: [NVDA, AMD, QCOM, GOOGL]
+    competes_with: [TSM, INTC, MU, 000660.KS]
+
+  # --- Memory ---
+  MU:
+    depends_on: [AMAT, LRCX]
+    supplies_to: [NVDA, AMD, AAPL, MSFT, GOOGL, AMZN, META]
+    competes_with: [005930.KS, 000660.KS]
+
+  000660.KS:
+    depends_on: [AMAT, LRCX]
+    supplies_to: [NVDA, AMD, AAPL]
+    competes_with: [005930.KS, MU]
+    note: "HBM3e leader — NVIDIA's primary HBM supplier for H200/B200"
+
+  # --- Chip Designers ---
+  NVDA:
+    depends_on: [TSM, 005930.KS, MU, 000660.KS]
+    supplies_to: [MSFT, GOOGL, AMZN, META, AAPL]
+    competes_with: [AMD, INTC, AVGO]
+    ecosystem_leader: true  # Drives demand for entire supply chain
+
+  AMD:
+    depends_on: [TSM, 005930.KS, MU]
+    supplies_to: [MSFT, GOOGL, AMZN, META]
+    competes_with: [NVDA, INTC]
+
+  INTC:
+    depends_on: [ASML, AMAT, LRCX, KLAC, TSM]
+    supplies_to: [MSFT, GOOGL, AMZN, AAPL]
+    competes_with: [NVDA, AMD, TSM, AVGO]
+
+  AVGO:
+    depends_on: [TSM, 005930.KS]
+    supplies_to: [GOOGL, META, AAPL]
+    competes_with: [NVDA, MRVL, QCOM]
+
+  QCOM:
+    depends_on: [TSM, 005930.KS]
+    supplies_to: [AAPL, 2454.TW]
+    competes_with: [AVGO, MDTK, ARM]
+
+  MRVL:
+    depends_on: [TSM]
+    supplies_to: [AMZN, MSFT, GOOGL]
+    competes_with: [AVGO, NVDA]
+
+  MDTK:
+    depends_on: [TSM, ARM]
+    supplies_to: []
+    competes_with: [QCOM]
+
+  # --- Hyperscalers ---
+  AAPL:
+    depends_on: [TSM, NVDA, QCOM, MU, 005930.KS, AVGO]
+    supplies_to: []
+    competes_with: [MSFT, GOOGL, 005930.KS]
+
+  MSFT:
+    depends_on: [NVDA, AMD, INTC, MU]
+    supplies_to: []
+    competes_with: [GOOGL, AMZN]
+    capex_driver: true  # Their spending drives chip demand
+
+  GOOGL:
+    depends_on: [NVDA, AVGO, INTC, MU, 005930.KS]
+    supplies_to: []
+    competes_with: [MSFT, AMZN, META]
+    capex_driver: true
+
+  AMZN:
+    depends_on: [NVDA, AMD, INTC, MRVL]
+    supplies_to: []
+    competes_with: [MSFT, GOOGL]
+    capex_driver: true
+
+  META:
+    depends_on: [NVDA, AMD, AVGO]
+    supplies_to: []
+    competes_with: [GOOGL]
+    capex_driver: true
+
+  # --- IP ---
+  ARM:
+    depends_on: []
+    supplies_to: [NVDA, QCOM, AAPL, 2454.TW, 005930.KS, STM, IFNNY]
+    competes_with: []
+
+  # --- Analog / Industrial ---
+  TXN:
+    depends_on: []
+    supplies_to: [AAPL, 005930.KS]
+    competes_with: [ADI, STM, ON]
+
+  ADI:
+    depends_on: [TSM]
+    supplies_to: []
+    competes_with: [TXN, ON, STM]
+
+  ON:
+    depends_on: []
+    supplies_to: []
+    competes_with: [TXN, ADI, STM, IFNNY]
+
+  IFNNY:
+    depends_on: [TSM, ARM]
+    supplies_to: []
+    competes_with: [TXN, STM, ON]
+
+  STM:
+    depends_on: [TSM, ARM]
+    supplies_to: [AAPL, 005930.KS]
+    competes_with: [TXN, IFNNY, ON]

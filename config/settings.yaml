@@ -1,0 +1,68 @@
+# =============================================================
+# Trading Expert — Global Settings
+# =============================================================
+
+# --- Market Hours (ET) ---
+market:
+  open: "09:30"
+  close: "16:00"
+  timezone: "America/New_York"
+  trading_days: [1, 2, 3, 4, 5]  # Mon-Fri
+
+# --- Intraday Monitoring ---
+intraday:
+  interval_minutes: 15            # Fetch news every 15 min
+  max_articles_per_fetch: 50      # Cap per API call
+  batch_size_deepseek: 8          # Articles per DeepSeek request
+
+# --- DeepSeek API ---
+deepseek:
+  model_default: "deepseek-chat"
+  model_reasoning: "deepseek-reasoner"
+  max_tokens: 2048
+  temperature: 0.1                # Low temp for consistent structured output
+  reasoning_threshold: 0.8        # Use reasoner model when prefilter score > 0.8
+  rate_limit_rpm: 30              # Requests per minute (free tier)
+
+# --- Signal Scoring ---
+signals:
+  weights:
+    deepseek_sentiment: 0.50
+    news_volume: 0.20
+    source_credibility: 0.15
+    price_confirmation: 0.15
+  thresholds:
+    strong_alert: 0.6             # |score| > 0.6 → push alert
+    watch_list: 0.4               # |score| > 0.4 → include in daily summary
+    min_confidence: "medium"      # Only alert if DeepSeek confidence >= medium
+
+# --- News Sources ---
+news_sources:
+  tier1:                          # Highest credibility
+    - reuters.com
+    - bloomberg.com
+    - wsj.com
+    - ft.com
+  tier2:                          # Industry / good
+    - seekingalpha.com
+    - marketwatch.com
+    - cnbc.com
+    - barrons.com
+  tier3:                          # Blogs / social
+    - reddit.com
+    - medium.com
+
+# --- RSS Feeds ---
+rss_feeds:
+  - url: "https://feeds.reuters.com/reuters/businessNews"
+    tier: 1
+  - url: "https://www.cnbc.com/id/100003114/device/rss/rss.html"
+    tier: 2
+  - url: "https://seekingalpha.com/feed.xml"
+    tier: 2
+
+# --- Telegram ---
+telegram:
+  alert_cooldown_minutes: 30      # Don't send same ticker alert twice in 30 min
+  daily_summary_time: "16:30"     # Send daily report 30 min after close
+  max_alerts_per_day: 20          # Cap to avoid spam
