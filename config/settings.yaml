@@ -53,15 +53,10 @@ news_sources:
     - medium.com
 
 # --- RSS Feeds ---
-# Verified working as of June 2026
 rss_feeds:
-  - url: "https://seekingalpha.com/feed.xml"
-    tier: 2
-  - url: "https://www.reutersagency.com/feed/?best-topics=business-finance&post_type=best"
+  - url: "https://feeds.reuters.com/reuters/businessNews"
     tier: 1
-  - url: "https://www.marketwatch.com/feed/rss"
-    tier: 2
-  - url: "https://www.investors.com/feed/"
+  - url: "https://www.cnbc.com/id/100003114/device/rss/rss.html"
     tier: 2
   - url: "https://www.cnbc.com/id/100003114/device/rss/rss.html"
     tier: 2

@@ -85,17 +85,21 @@ class Prefilter:
         # Is sentiment extreme?
         is_extreme = abs(scores["compound"]) >= self.sentiment_threshold
 
-        # Escalate if: extreme sentiment OR critical keywords OR tier-1 source
-        has_critical = any(
-            self._all_keywords.get(kw.lower()) == "critical"
-            for kw in keywords
-        )
-        should_escalate = (
-            is_extreme
-            or has_critical
-            or article.source_tier == 1  # Reuters/Bloomberg/WSJ always escalate
-            or (bool(keywords) and article.source_tier <= 2)
-        )
+        # Only escalate if article mentions at least one tracked ticker
+        if not tickers:
+            should_escalate = False
+        else:
+            # Escalate if: extreme sentiment OR critical keywords OR tier-1 source
+            has_critical = any(
+                self._all_keywords.get(kw.lower()) == "critical"
+                for kw in keywords
+            )
+            should_escalate = (
+                is_extreme
+                or has_critical
+                or article.source_tier == 1
+                or (bool(keywords) and article.source_tier <= 2)
+            )
 
         return PrefilterResult(
             article_id=article.article_id,

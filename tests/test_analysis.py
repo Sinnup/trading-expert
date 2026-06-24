@@ -141,7 +141,7 @@ class TestPrefilter:
             title="Company faces potential bankruptcy",
             source="cnbc",
             source_tier=2,
-            text="The semiconductor startup is facing potential bankruptcy "
+            text="The Intel-backed semiconductor startup is facing potential bankruptcy "
                  "after failing to secure additional funding.",
         )
         result = prefilter.score(article)
