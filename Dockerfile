@@ -10,7 +10,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /usr/local/bin/uv
 WORKDIR /app
 
 # Copy dependency files and source
-COPY pyproject.toml uv.lock .python-version ./
+COPY pyproject.toml uv.lock .python-version README.md ./
 COPY trading_expert/ ./trading_expert/
 COPY config/ ./config/
 
