@@ -73,7 +73,7 @@ tickers:
     region: us
     weight: 0.6
 
-  - ticker: ON
+  - ticker: "ON"
     name: ON Semiconductor
     sector: power_auto
     role: designer_foundry

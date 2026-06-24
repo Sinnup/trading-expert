@@ -93,29 +93,46 @@ class RSSFetcher(BaseFetcher):
 
 
 class NewsAPIFetcher(BaseFetcher):
-    """Fetches from NewsAPI (newsapi.org). Free tier: 100 req/day."""
+    """Fetches from NewsAPI (newsapi.org). Free tier: 100 req/day.
+
+    Batches all tickers into one OR query to stay within rate limits.
+    With the 24/7 schedule, this uses ~48 of 100 daily requests.
+    """
 
     source_name = "newsapi"
     source_tier = 2
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, max_tickers_per_query: int = 20):
+        """
+        Args:
+            api_key: NewsAPI key.
+            max_tickers_per_query: Split into batches if more tickers than this.
+        """
         self.api_key = api_key
         self.base_url = "https://newsapi.org/v2/everything"
+        self.max_tickers_per_query = max_tickers_per_query
 
     async def fetch(
         self, tickers: list[str], since: Optional[datetime] = None
     ) -> list[RawArticle]:
-        """Fetch articles matching ticker keywords from NewsAPI."""
+        """Fetch articles matching ticker keywords (batched OR queries)."""
         articles: list[RawArticle] = []
         since = since or datetime.now(timezone.utc) - timedelta(hours=6)
 
+        # Split into batches to keep query strings reasonable
+        batches = [
+            tickers[i:i + self.max_tickers_per_query]
+            for i in range(0, len(tickers), self.max_tickers_per_query)
+        ]
+
         async with httpx.AsyncClient(timeout=30.0) as client:
-            for ticker in tickers:
+            for batch in batches:
+                query = " OR ".join(batch)
                 try:
                     response = await client.get(
                         self.base_url,
                         params={
-                            "q": ticker,
+                            "q": query,
                             "from": since.strftime("%Y-%m-%dT%H:%M:%S"),
                             "sortBy": "publishedAt",
                             "language": "en",
@@ -127,7 +144,7 @@ class NewsAPIFetcher(BaseFetcher):
                     data = response.json()
 
                     if data.get("status") != "ok":
-                        logger.warning(f"NewsAPI error for {ticker}: {data.get('message')}")
+                        logger.warning(f"NewsAPI error: {data.get('message')}")
                         continue
 
                     for item in data.get("articles", []):
@@ -153,10 +170,10 @@ class NewsAPIFetcher(BaseFetcher):
                         articles.append(article)
 
                 except Exception as e:
-                    logger.warning(f"NewsAPI fetch failed for {ticker}: {e}")
+                    logger.warning(f"NewsAPI fetch failed for batch: {e}")
                     continue
 
-        logger.info(f"NewsAPI: fetched {len(articles)} articles")
+        logger.info(f"NewsAPI: fetched {len(articles)} articles in {len(batches)} request(s)")
         return self.deduplicate(articles)
 
     @staticmethod
