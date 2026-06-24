@@ -193,15 +193,15 @@ class NewsAPIFetcher(BaseFetcher):
 class GNewsFetcher(BaseFetcher):
     """Fetches from GNews (gnews.io). Free tier: 100 req/day, 10 articles/req.
 
-    Batches all tickers into a single OR query to stay within rate limits.
-    With the new 24/7 schedule (every 30 min = 48 fetches/day), this uses
-    ~48-96 of the 100 daily requests.
+    Batches all tickers into OR queries to stay within rate limits.
+    With the 24/7 schedule (every 30 min = 48 fetches/day), 2 batches
+    per interval = 96 requests/day, within the 100 limit.
     """
 
     source_name = "gnews"
     source_tier = 2
 
-    def __init__(self, api_key: str, max_tickers_per_query: int = 14):
+    def __init__(self, api_key: str, max_tickers_per_query: int = 15):
         """
         Args:
             api_key: GNews API key.
