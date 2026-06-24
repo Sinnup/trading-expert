@@ -21,6 +21,7 @@ Apple, Microsoft, Alphabet, Amazon, Meta, MediaTek, Arm, Infineon, STMicro.
 - Click CLI for terminal interface
 
 ## Key Rules
+- **Answer first, code later**: When the user asks a question, answer it — do NOT start implementing. Wait for explicit confirmation before making any code changes.
 - ALL secrets in .env, never committed
 - Atomic commits with conventional commit format
 - Test each feature before advancing to next phase
