@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from celery import shared_task
 
-from trading_expert.models.database import get_session, init_db
+from trading_expert.models import get_session, init_db
 from trading_expert.models.signal import Signal
 from trading_expert.models.portfolio import SignalOutcome
 from trading_expert.fetchers.prices import PriceFetcher

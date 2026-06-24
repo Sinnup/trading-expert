@@ -11,7 +11,7 @@ import logging
 from datetime import datetime, date, timezone
 from typing import Optional
 
-from trading_expert.models.database import get_session
+from trading_expert.models import get_session
 from trading_expert.models.portfolio import PaperTrade, PortfolioSnapshot
 
 logger = logging.getLogger(__name__)

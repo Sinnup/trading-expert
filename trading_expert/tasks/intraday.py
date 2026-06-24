@@ -23,7 +23,7 @@ from typing import Optional
 
 from celery import shared_task
 
-from trading_expert.models.database import get_session, init_db
+from trading_expert.models import get_session, init_db
 from trading_expert.models.article import Article
 from trading_expert.models.signal import Signal
 from trading_expert.fetchers.news import RSSFetcher, NewsAPIFetcher, GNewsFetcher

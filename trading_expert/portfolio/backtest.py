@@ -11,7 +11,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from trading_expert.models.database import get_session
+from trading_expert.models import get_session
 from trading_expert.models.signal import Signal
 from trading_expert.models.portfolio import SignalOutcome
 from trading_expert.fetchers.prices import PriceFetcher
