@@ -57,13 +57,15 @@ def build_tickers_map(companies_config: dict) -> dict[str, list[str]]:
     """Build ticker → [name variants] map for matching."""
     tickers_map: dict[str, list[str]] = {}
     for c in companies_config.get("tickers", []):
-        ticker = c["ticker"]
-        variants = [ticker, c.get("name", "")]
+        ticker = str(c["ticker"])
+        variants: list[str] = [ticker]
+        name = c.get("name")
+        if name and isinstance(name, str):
+            variants.append(name)
         # Add ADR if present
-        if c.get("adr"):
-            variants.append(c["adr"])
-        # Filter empty
-        variants = [v for v in variants if v]
+        adr = c.get("adr")
+        if adr and isinstance(adr, str):
+            variants.append(adr)
         tickers_map[ticker] = variants
     return tickers_map
 
