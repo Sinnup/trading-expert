@@ -1,7 +1,9 @@
-"""Intraday task — fetches news, filters, analyzes, and alerts.
+"""24/7 monitoring task — fetches news, filters, analyzes, and alerts.
 
-This is the main monitoring loop that runs every 15 minutes during
-market hours (9:30 AM – 4:00 PM ET, Mon-Fri).
+Runs every 30 minutes around the clock to cover all time zones:
+- Asian hours: TSMC, Samsung, SK Hynix, MediaTek
+- European hours: ASML, Infineon, STMicro, Arm
+- US hours: NVIDIA, AMD, Intel, Apple, Microsoft, etc.
 
 Flow:
     1. Fetch new articles from all sources (RSS, NewsAPI, GNews)

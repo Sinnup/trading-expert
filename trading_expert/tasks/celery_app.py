@@ -49,13 +49,14 @@ celery_app.conf.update(
 # ── Beat Schedule ────────────────────────────────────────────────────────
 
 celery_app.conf.beat_schedule = {
-    # Intraday: fetch and analyze news every 15 minutes during market hours
+    # 24/7 monitoring: fetch and analyze news every 30 minutes, around the clock
+    # Covers Asian (TSMC, Samsung), European (ASML, Infineon), and US markets
     "intraday-fetch": {
         "task": "trading_expert.tasks.intraday.intraday_fetch",
-        "schedule": crontab(minute="*/15", hour="9-16", day_of_week="1-5"),
-        "options": {"expires": 14 * 60},  # Expire after 14 min
+        "schedule": crontab(minute="*/30", hour="*", day_of_week="*"),
+        "options": {"expires": 29 * 60},  # Expire after 29 min
     },
-    # Daily summary: 30 minutes after market close
+    # Daily summary: 30 minutes after US market close (ET)
     "daily-summary": {
         "task": "trading_expert.tasks.daily.daily_summary",
         "schedule": crontab(minute="30", hour="16", day_of_week="1-5"),

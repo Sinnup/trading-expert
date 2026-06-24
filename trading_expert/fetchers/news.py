@@ -174,29 +174,48 @@ class NewsAPIFetcher(BaseFetcher):
 
 
 class GNewsFetcher(BaseFetcher):
-    """Fetches from GNews (gnews.io). Free tier: 100 req/day."""
+    """Fetches from GNews (gnews.io). Free tier: 100 req/day, 10 articles/req.
+
+    Batches all tickers into a single OR query to stay within rate limits.
+    With the new 24/7 schedule (every 30 min = 48 fetches/day), this uses
+    ~48-96 of the 100 daily requests.
+    """
 
     source_name = "gnews"
     source_tier = 2
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, max_tickers_per_query: int = 14):
+        """
+        Args:
+            api_key: GNews API key.
+            max_tickers_per_query: Split into batches if more tickers than this.
+        """
         self.api_key = api_key
         self.base_url = "https://gnews.io/api/v4/search"
+        self.max_tickers_per_query = max_tickers_per_query
 
     async def fetch(
         self, tickers: list[str], since: Optional[datetime] = None
     ) -> list[RawArticle]:
-        """Fetch articles from GNews for given tickers."""
+        """Fetch articles from GNews for all tickers (batched into OR queries)."""
         articles: list[RawArticle] = []
         since = since or datetime.now(timezone.utc) - timedelta(hours=6)
 
+        # Split tickers into batches to keep query URL reasonable
+        batches = [
+            tickers[i:i + self.max_tickers_per_query]
+            for i in range(0, len(tickers), self.max_tickers_per_query)
+        ]
+
         async with httpx.AsyncClient(timeout=30.0) as client:
-            for ticker in tickers:
+            for batch in batches:
+                # Build OR query: "(NVIDIA OR Intel OR TSMC OR ...)"
+                query = " OR ".join(batch)
                 try:
                     response = await client.get(
                         self.base_url,
                         params={
-                            "q": ticker,
+                            "q": query,
                             "from": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
                             "lang": "en",
                             "max": 20,
@@ -227,8 +246,8 @@ class GNewsFetcher(BaseFetcher):
                         articles.append(article)
 
                 except Exception as e:
-                    logger.warning(f"GNews fetch failed for {ticker}: {e}")
+                    logger.warning(f"GNews fetch failed for batch: {e}")
                     continue
 
-        logger.info(f"GNews: fetched {len(articles)} articles")
+        logger.info(f"GNews: fetched {len(articles)} articles in {len(batches)} request(s)")
         return self.deduplicate(articles)
