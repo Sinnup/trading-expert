@@ -90,6 +90,18 @@
 
 ## Changelog
 
+### 0.1.1 — 2026-06-24
+
+**fix(fetchers)**: NewsAPIFetcher now batches tickers into OR queries (1-2 req/interval instead of 27), staying within 100/day free tier limit.
+**fix(config)**: Quoted `"ON"` ticker in companies.yaml — YAML was parsing it as boolean `True`.
+**fix(tasks)**: Added type safety in `build_tickers_map` to filter non-string variants.
+**fix(imports)**: Corrected `models.database` → `models` import path across 4 files.
+**fix(docker)**: Simplified Dockerfile to single stage, added README.md copy, removed `--frozen` flag.
+**feat(tasks)**: Switched from market-hours-only to 24/7 monitoring (every 30 min). Covers Asian, European, and US time zones.
+**fix(analysis)**: Prefilter now requires at least one tracked ticker match before escalating to DeepSeek. Cuts irrelevant API calls by 90%.
+**docs(claude)**: Added rule — answer questions before implementing code.
+**test**: 43 tests passing. System verified end-to-end with live Telegram alert.
+
 ### 0.1.0 — 2026-06-23
 
 **Initial Release** — Complete AI trading advisor pipeline.
