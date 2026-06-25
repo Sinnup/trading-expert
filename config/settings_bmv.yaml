@@ -66,10 +66,8 @@ rss_feeds:
     tier: 1
   - url: "https://www.elfinanciero.com.mx/arc/outboundfeeds/rss/?outputType=xml"
     tier: 1
-  - url: "https://expansion.mx/arc/outboundfeeds/rss/?outputType=xml"
-    tier: 2
-  - url: "https://www.eleconomista.com.mx/rss/empresas.xml"
-    tier: 1
+  # Note: Expansión and El Economista empresas block RSS programmatic access (403).
+  # Replace with valid feeds when available.
 
 # --- Urgency Keywords (Spanish + Mexican market) ---
 urgency_keywords:
