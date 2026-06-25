@@ -102,15 +102,17 @@ class NewsAPIFetcher(BaseFetcher):
     source_name = "newsapi"
     source_tier = 2
 
-    def __init__(self, api_key: str, max_tickers_per_query: int = 20):
+    def __init__(self, api_key: str, max_tickers_per_query: int = 20, language: str = "en"):
         """
         Args:
             api_key: NewsAPI key.
             max_tickers_per_query: Split into batches if more tickers than this.
+            language: Article language filter (e.g., "en", "es"). Default "en".
         """
         self.api_key = api_key
         self.base_url = "https://newsapi.org/v2/everything"
         self.max_tickers_per_query = max_tickers_per_query
+        self.language = language
 
     async def fetch(
         self, tickers: list[str], since: Optional[datetime] = None
@@ -135,7 +137,7 @@ class NewsAPIFetcher(BaseFetcher):
                             "q": query,
                             "from": since.strftime("%Y-%m-%dT%H:%M:%S"),
                             "sortBy": "publishedAt",
-                            "language": "en",
+                            "language": self.language,
                             "pageSize": 20,
                             "apiKey": self.api_key,
                         },
@@ -201,15 +203,17 @@ class GNewsFetcher(BaseFetcher):
     source_name = "gnews"
     source_tier = 2
 
-    def __init__(self, api_key: str, max_tickers_per_query: int = 15):
+    def __init__(self, api_key: str, max_tickers_per_query: int = 15, language: str = "en"):
         """
         Args:
             api_key: GNews API key.
             max_tickers_per_query: Split into batches if more tickers than this.
+            language: Article language filter (e.g., "en", "es"). Default "en".
         """
         self.api_key = api_key
         self.base_url = "https://gnews.io/api/v4/search"
         self.max_tickers_per_query = max_tickers_per_query
+        self.language = language
 
     async def fetch(
         self, tickers: list[str], since: Optional[datetime] = None
@@ -234,7 +238,7 @@ class GNewsFetcher(BaseFetcher):
                         params={
                             "q": query,
                             "from": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                            "lang": "en",
+                            "lang": self.language,
                             "max": 20,
                             "token": self.api_key,
                         },
