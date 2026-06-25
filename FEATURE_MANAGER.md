@@ -90,6 +90,33 @@
 
 ## Changelog
 
+### 0.2.0 — 2026-06-25
+
+**Multi-Universe Support** — Independent BMV (Mexican stocks) pipeline alongside semiconductor.
+
+**feat(config)**: Added `config/companies_bmv.yaml` (6 BMV tickers: FEMSA, BIMBO, BBVA, Volaris,
+Chedraui, Axtel) and `config/settings_bmv.yaml` (Mexico City market hours, Spanish RSS feeds
+from El Economista/El Financiero/Expansión, BMV urgency keywords).
+
+**feat(fetchers)**: NewsAPIFetcher and GNewsFetcher now accept `language` parameter (default `"en"`).
+BMV pipeline passes `language="es"` for Spanish-language news coverage.
+
+**feat(tasks)**: Created `intraday_bmv.py` and `daily_bmv.py` — full analysis pipeline for BMV
+stocks. Skips supply chain cascade (BMV stocks span unrelated sectors). Tags signals with
+`signal_type="intraday_bmv"` to keep universes separate in the same database.
+
+**feat(tasks)**: Added BMV beat schedule to Celery: `intraday-fetch-bmv` (every 30 min, 24/7)
+and `daily-summary-bmv` (9:15 PM UTC / 3:15 PM Mexico City, weekdays).
+
+**feat(cli)**: Added `--universe` flag (semiconductor/bmv/all) to all CLI commands. Auto-detects
+BMV tickers by `.MX` suffix. Validates tickers against universe config.
+
+**feat(notifications)**: Created `SignalRepository` with signal_type filtering. Telegram bot
+auto-detects BMV tickers in `/signals` and `/status` commands.
+
+**test**: All 43 existing tests passing. Architecturally isolated — zero changes to existing
+semiconductor pipeline behavior.
+
 ### 0.1.1 — 2026-06-24
 
 **fix(fetchers)**: NewsAPIFetcher now batches tickers into OR queries (1-2 req/interval instead of 27), staying within 100/day free tier limit.
