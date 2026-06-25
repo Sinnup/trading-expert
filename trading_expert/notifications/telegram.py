@@ -247,11 +247,24 @@ async def start_command_bot(
     notifier = TelegramNotifier(bot_token=bot_token)
 
     async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show current signal summary."""
+        """Show current signal summary. Optional universe filter via args."""
+        universe = context.args[0] if context.args else None
+        signal_type = None
+        if universe == "bmv":
+            signal_type = "intraday_bmv"
+            label = "BMV (Mexican Stocks)"
+        elif universe == "semiconductor":
+            signal_type = "intraday"
+            label = "Semiconductor & Tech"
+        else:
+            label = "All Universes"
+
         try:
-            signals = signal_repo.get_recent(days=1)
+            signals = signal_repo.get_recent(days=1, signal_type=signal_type)
             if not signals:
-                await update.message.reply_text("No signals today. Markets are quiet.")
+                await update.message.reply_text(
+                    f"No signals today in {label}. Markets are quiet."
+                )
                 return
             msg = format_daily_summary([
                 {
@@ -268,17 +281,21 @@ async def start_command_bot(
             await update.message.reply_text(format_error(str(e)))
 
     async def cmd_signals(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show last 5 signals for a ticker."""
+        """Show last 5 signals for a ticker. Auto-detects BMV from .MX suffix."""
         ticker = " ".join(context.args) if context.args else None
         if not ticker:
-            await update.message.reply_text("Usage: /signals NVDA")
+            await update.message.reply_text(
+                "Usage: /signals NVDA or /signals BIMBOA.MX"
+            )
             return
         try:
-            signals = signal_repo.get_for_ticker(ticker.upper(), limit=5)
+            # signal_repo auto-detects .MX → signal_type="intraday_bmv"
+            signals = signal_repo.get_for_ticker(ticker, limit=5)
             if not signals:
                 await update.message.reply_text(f"No signals for {ticker.upper()}")
                 return
-            lines = [f"📋 Last signals for {ticker.upper()}:", ""]
+            universe = "BMV" if ticker.upper().endswith(".MX") else "US"
+            lines = [f"📋 Last {universe} signals for {ticker.upper()}:", ""]
             for s in signals:
                 lines.append(
                     f"• {s.created_at.strftime('%m/%d')}: {s.action.upper()} "
