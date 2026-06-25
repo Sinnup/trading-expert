@@ -1,0 +1,81 @@
+# =============================================================
+# Trading Expert — BMV (Bolsa Mexicana de Valores) Universe
+# =============================================================
+# Tracked Mexican stocks across consumer, financial, airline,
+# retail, and telecom sectors. No semiconductor supply chain
+# relationships exist — the analysis pipeline skips cascade
+# generation for this universe.
+# =============================================================
+
+tickers:
+  # =========================================
+  # Consumer / Beverage
+  # =========================================
+  - ticker: FEMSAUBD.MX
+    name: Fomento Económico Mexicano
+    sector: beverage_retail
+    role: consumer_conglomerate
+    region: mexico
+    weight: 1.0
+    note: "Coca-Cola bottler + OXXO convenience stores — consumer proxy for Mexico"
+
+  - ticker: BIMBOA.MX
+    name: Grupo Bimbo
+    sector: consumer_staples
+    role: food_producer
+    region: mexico
+    weight: 1.0
+    note: "World's largest bakery company — 33 countries, defensive consumer staple"
+
+  # =========================================
+  # Financial
+  # =========================================
+  - ticker: BBVA.MX
+    name: Grupo Financiero BBVA México
+    sector: financial
+    role: bank
+    region: mexico
+    weight: 1.0
+    note: "Mexico's largest bank by assets — proxy for Mexican financial sector"
+
+  # =========================================
+  # Airline
+  # =========================================
+  - ticker: VOLARA.MX
+    name: Volaris
+    sector: airline
+    role: low_cost_carrier
+    region: mexico
+    weight: 1.0
+    note: "Mexico's largest domestic airline by passengers — ultra-low-cost model"
+
+  # =========================================
+  # Retail
+  # =========================================
+  - ticker: CHDRAUIB.MX
+    name: Grupo Comercial Chedraui
+    sector: retail
+    role: supermarket_chain
+    region: mexico
+    weight: 1.0
+    note: "Third-largest Mexican supermarket chain — also operates in US (El Super, Fiesta Mart)"
+
+  # =========================================
+  # Telecom / IT
+  # =========================================
+  - ticker: AXTELCPO.MX
+    name: Axtel
+    sector: telecom
+    role: it_telecom_services
+    region: mexico
+    weight: 1.0
+    note: "Mexican IT services and telecom provider — enterprise and government focus"
+
+# =========================================
+# Supply Chain Graph — NOT APPLICABLE
+# =========================================
+# BMV stocks span unrelated sectors (consumer, finance, airline,
+# retail, telecom). There are no semiconductor-style supply chain
+# relationships between a bank, an airline, and a bread maker.
+# The intraday_bmv.py pipeline skips cascade generation entirely.
+# =========================================

@@ -1,0 +1,121 @@
+# =============================================================
+# Trading Expert — BMV-Specific Settings
+# =============================================================
+# Settings for the Mexican stock universe. Used by intraday_bmv.py
+# and daily_bmv.py. Separate from settings.yaml to keep universes
+# decoupled.
+# =============================================================
+
+# --- Market Hours (Mexico City) ---
+# BMV trades 8:30 AM to 3:00 PM, Monday-Friday
+# Mexico City: CST (UTC-6) Nov-Mar, CDT (UTC-5) Apr-Oct
+market:
+  open: "08:30"
+  close: "15:00"
+  timezone: "America/Mexico_City"
+  trading_days: [1, 2, 3, 4, 5]  # Mon-Fri
+
+# --- Intraday Monitoring ---
+intraday:
+  interval_minutes: 30            # Fetch news every 30 min
+  max_articles_per_fetch: 50      # Cap per API call
+  batch_size_deepseek: 8          # Articles per DeepSeek request
+
+# --- DeepSeek API ---
+# Same API configuration as semiconductor universe
+deepseek:
+  model_default: "deepseek-chat"
+  model_reasoning: "deepseek-reasoner"
+  max_tokens: 2048
+  temperature: 0.1
+  reasoning_threshold: 0.8
+  rate_limit_rpm: 30
+
+# --- Signal Scoring ---
+# Same weighted scoring as semiconductor universe
+signals:
+  weights:
+    deepseek_sentiment: 0.50
+    news_volume: 0.20
+    source_credibility: 0.15
+    price_confirmation: 0.15
+  thresholds:
+    strong_alert: 0.6
+    watch_list: 0.4
+    min_confidence: "medium"
+
+# --- News Sources (Spanish / Mexican) ---
+news_sources:
+  tier1:                          # Highest credibility — Mexican financial
+    - eleconomista.com.mx
+    - elfinanciero.com.mx
+    - bloomberglinea.com.mx
+    - expansion.mx
+  tier2:                          # Industry / good — LATAM coverage
+    - forbes.com.mx
+    - milenio.com
+    - eluniversal.com.mx
+    - reuters.com                 # Keep for international coverage
+  tier3:                          # Social / alternative
+    - elceo.com
+    - sentidocomun.com.mx
+
+# --- RSS Feeds (Spanish-language) ---
+rss_feeds:
+  - url: "https://www.eleconomista.com.mx/rss/dinero.xml"
+    tier: 1
+  - url: "https://www.elfinanciero.com.mx/arc/outboundfeeds/rss/?outputType=xml"
+    tier: 1
+  - url: "https://expansion.mx/arc/outboundfeeds/rss/?outputType=xml"
+    tier: 2
+  - url: "https://www.eleconomista.com.mx/rss/empresas.xml"
+    tier: 1
+
+# --- Urgency Keywords (Spanish + Mexican market) ---
+urgency_keywords:
+  critical:
+    # Earnings / corporate events
+    - resultados trimestrales
+    - reporte anual
+    - guía de ganancias
+    - adquisición
+    - fusión
+    - quiebra
+    - suspensión
+    - delisting
+    # Regulatory / macro
+    - Banxico
+    - tasa de interés
+    - política monetaria
+    - inflación
+    - tipo de cambio
+    - devaluación
+    - emergencia nacional
+    # Trade / geopolitics
+    - aranceles
+    - T-MEC
+    - USMCA
+    - nearshoring
+    - tratado comercial
+    - reforma fiscal
+    - reforma energética
+    - elecciones
+  high:
+    - dividendo
+    - recompra de acciones
+    - nuevo CEO
+    - despidos
+    - huelga
+    - bloqueo
+    - inversión extranjera
+    - crecimiento PIB
+    - calificación crediticia
+    - apertura
+    - expansión
+    - competencia
+
+# --- Telegram ---
+telegram:
+  alert_cooldown_minutes: 30
+  daily_summary_time: "15:15"     # 15 min after BMV close (Mexico City)
+  max_alerts_per_day: 20
