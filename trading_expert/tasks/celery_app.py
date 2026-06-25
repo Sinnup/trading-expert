@@ -27,6 +27,8 @@ celery_app = Celery(
     include=[
         "trading_expert.tasks.intraday",
         "trading_expert.tasks.daily",
+        "trading_expert.tasks.intraday_bmv",
+        "trading_expert.tasks.daily_bmv",
     ],
 )
 
@@ -67,5 +69,18 @@ celery_app.conf.beat_schedule = {
         "task": "trading_expert.tasks.daily.check_signal_outcomes",
         "schedule": crontab(minute="0", hour="6", day_of_week="*"),
         "options": {"expires": 30 * 60},
+    },
+    # ── BMV (Mexican Stocks) Beat Schedule ───────────────────────────
+    # 24/7 monitoring for BMV stocks — Spanish-language news every 30 min
+    "intraday-fetch-bmv": {
+        "task": "trading_expert.tasks.intraday_bmv.intraday_fetch_bmv",
+        "schedule": crontab(minute="*/30", hour="*", day_of_week="*"),
+        "options": {"expires": 29 * 60},
+    },
+    # BMV daily summary: 15 minutes after BMV close (3:00 PM Mexico City = 21:00 UTC)
+    "daily-summary-bmv": {
+        "task": "trading_expert.tasks.daily_bmv.daily_summary_bmv",
+        "schedule": crontab(minute="15", hour="21", day_of_week="1-5"),
+        "options": {"expires": 60 * 60},
     },
 }
