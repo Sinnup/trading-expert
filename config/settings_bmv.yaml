@@ -61,13 +61,10 @@ news_sources:
     - sentidocomun.com.mx
 
 # --- RSS Feeds (Spanish-language) ---
+# Note: El Economista (eleconomista.com.mx) blocks RSS access (403) — removed 2026-06-26
 rss_feeds:
-  - url: "https://www.eleconomista.com.mx/rss/dinero.xml"
-    tier: 1
   - url: "https://www.elfinanciero.com.mx/arc/outboundfeeds/rss/?outputType=xml"
     tier: 1
-  # Note: Expansión and El Economista empresas block RSS programmatic access (403).
-  # Replace with valid feeds when available.
 
 # --- Urgency Keywords (Spanish + Mexican market) ---
 urgency_keywords:

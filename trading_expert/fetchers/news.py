@@ -8,7 +8,9 @@ RSS feeds are unlimited and free — they are the primary high-frequency source.
 NewsAPI and GNews provide broader coverage but have free-tier rate limits.
 """
 
+import asyncio
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -17,6 +19,19 @@ import httpx
 from .base import BaseFetcher, RawArticle
 
 logger = logging.getLogger(__name__)
+
+# Yahoo Finance suffixes that break GNews/NewsAPI query syntax
+_EXCHANGE_SUFFIX_RE = re.compile(r"\.(MX|SS|KS|TW|TWO|HK|L|PA|DE|AS|SW|MI|MC|VI|BR|CO|SN|TO|V|AX|NZ|SI|JK|NS|BO|SA|SR|BA|TA|WA|IR|GD|MU|MA|SG|KQ|QA|AB|DU|CA|F|HE|OL|ST|BC|IS|RG|CM|CL|I|LM|NB|STU|BM|CE|PR|CR|IL|BJ|CN|T|KS|KQ|LU|MA|ME|MX|NE|OP|PA|PC|PM|RG|SN|ST|TA|TL|VC|VN|VS)$")
+
+
+def _clean_ticker(ticker: str) -> str:
+    """Strip Yahoo Finance exchange suffix from a ticker symbol.
+
+    GNews and NewsAPI cannot parse ticker symbols with dots (e.g.,
+    FEMSAUBD.MX → FEMSAUBD, 005930.KS → 005930). The stripped
+    ticker still matches company mentions in news articles.
+    """
+    return _EXCHANGE_SUFFIX_RE.sub("", ticker)
 
 
 class RSSFetcher(BaseFetcher):
@@ -121,10 +136,12 @@ class NewsAPIFetcher(BaseFetcher):
         articles: list[RawArticle] = []
         since = since or datetime.now(timezone.utc) - timedelta(hours=6)
 
-        # Split into batches to keep query strings reasonable
+        # Split into batches, stripping exchange suffixes
+        # (NewsAPI cannot parse dot-notation like FEMSAUBD.MX → 400 error)
+        clean_tickers = [_clean_ticker(t) for t in tickers]
         batches = [
-            tickers[i:i + self.max_tickers_per_query]
-            for i in range(0, len(tickers), self.max_tickers_per_query)
+            clean_tickers[i:i + self.max_tickers_per_query]
+            for i in range(0, len(clean_tickers), self.max_tickers_per_query)
         ]
 
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -222,10 +239,12 @@ class GNewsFetcher(BaseFetcher):
         articles: list[RawArticle] = []
         since = since or datetime.now(timezone.utc) - timedelta(hours=6)
 
-        # Split tickers into batches to keep query URL reasonable
+        # Split tickers into batches, stripping exchange suffixes
+        # (GNews cannot parse dot-notation like FEMSAUBD.MX → 400 error)
+        clean_tickers = [_clean_ticker(t) for t in tickers]
         batches = [
-            tickers[i:i + self.max_tickers_per_query]
-            for i in range(0, len(tickers), self.max_tickers_per_query)
+            clean_tickers[i:i + self.max_tickers_per_query]
+            for i in range(0, len(clean_tickers), self.max_tickers_per_query)
         ]
 
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -269,6 +288,10 @@ class GNewsFetcher(BaseFetcher):
                 except Exception as e:
                     logger.warning(f"GNews fetch failed for batch: {e}")
                     continue
+
+                # Rate-limit: GNews free tier allows ~1 req/sec
+                if batch != batches[-1]:
+                    await asyncio.sleep(1.5)
 
         logger.info(f"GNews: fetched {len(articles)} articles in {len(batches)} request(s)")
         return self.deduplicate(articles)
