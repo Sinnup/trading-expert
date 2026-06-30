@@ -15,6 +15,7 @@ from trading_expert.models.signal import Signal
 from trading_expert.models.portfolio import SignalOutcome
 from trading_expert.fetchers.prices import PriceFetcher
 from trading_expert.notifications.telegram import TelegramNotifier
+from trading_expert.analysis.signals import signal_label
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ async def _daily_summary_bmv_async():
                 "ticker": s.ticker,
                 "score": s.score,
                 "action": s.action,
-                "alert_label": _get_label(s.score),
+                "alert_label": signal_label(s.score),
                 "confidence": s.deepseek_confidence,
             }
             for s in signals[:20]  # Top 20
@@ -76,21 +77,3 @@ async def _daily_summary_bmv_async():
         raise
     finally:
         session.close()
-
-
-def _get_label(score: float) -> str:
-    """Get signal label from score."""
-    if score >= 0.6:
-        return "🟢 STRONG BUY"
-    elif score >= 0.4:
-        return "🟢 BUY"
-    elif score >= 0.2:
-        return "🟡 WEAK BUY"
-    elif score > -0.2:
-        return "⚪ HOLD"
-    elif score > -0.4:
-        return "🟡 WEAK SELL"
-    elif score > -0.6:
-        return "🔴 SELL"
-    else:
-        return "🔴 STRONG SELL"

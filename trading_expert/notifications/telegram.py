@@ -15,6 +15,10 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional
 
+from trading_expert.constants import (
+    DEFAULT_ALERT_COOLDOWN_MINUTES,
+    DEFAULT_MAX_ALERTS_PER_DAY,
+)
 from .formatter import (
     format_alert,
     format_daily_summary,
@@ -38,8 +42,8 @@ class TelegramNotifier:
         self,
         bot_token: Optional[str] = None,
         chat_id: Optional[str] = None,
-        alert_cooldown_minutes: int = 30,
-        max_alerts_per_day: int = 20,
+        alert_cooldown_minutes: int = DEFAULT_ALERT_COOLDOWN_MINUTES,
+        max_alerts_per_day: int = DEFAULT_MAX_ALERTS_PER_DAY,
     ):
         """
         Args:
