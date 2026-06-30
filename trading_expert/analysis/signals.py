@@ -15,9 +15,57 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
+from trading_expert.constants import (
+    ACTION_HOLD_THRESHOLD,
+    CASCADE_ACTION_THRESHOLD,
+    CASCADE_SENTIMENT_MAGNITUDE,
+    CONFIDENCE_ORDER,
+    DEFAULT_MIN_CONFIDENCE,
+    DEFAULT_STRONG_ALERT_THRESHOLD,
+    DEFAULT_WATCH_THRESHOLD,
+    DEFAULT_WEIGHTS,
+    NEWS_VOLUME_ZSCORE_CLAMP,
+    PRICE_CONFIRMATION_SCALE_PCT,
+    SCORE_MAX,
+    SCORE_MIN,
+    SIGNAL_LABEL_BANDS,
+    SIGNAL_LABEL_STRONG_SELL,
+)
 from .deepseek import DeepSeekSignal
 
 logger = logging.getLogger(__name__)
+
+
+def signal_label(score: float) -> str:
+    """Human-readable label for a signal score (e.g. '🟢 STRONG BUY')."""
+    for lower_bound, label in SIGNAL_LABEL_BANDS:
+        if score >= lower_bound:
+            return label
+    return SIGNAL_LABEL_STRONG_SELL
+
+
+def compute_price_confirmation(
+    sentiment: float,
+    change_pct: Optional[float],
+    scale_pct: float = PRICE_CONFIRMATION_SCALE_PCT,
+) -> float:
+    """How much the price move confirms the sentiment direction.
+
+    Returns a value in [-1.0, 1.0]: positive when the price is moving the same
+    way as the sentiment (confirmation), negative when it contradicts it. A
+    daily move of ``scale_pct`` (or more) in the confirming direction yields the
+    full ±1.0.
+
+    Args:
+        sentiment: DeepSeek sentiment, -1.0 (bearish) to +1.0 (bullish).
+        change_pct: Day-over-day price change in percent. None → no signal.
+        scale_pct: Move size that counts as full confirmation.
+    """
+    if change_pct is None or sentiment == 0:
+        return 0.0
+    normalized_move = max(-1.0, min(1.0, change_pct / scale_pct))
+    direction = 1.0 if sentiment > 0 else -1.0
+    return direction * normalized_move
 
 
 @dataclass
@@ -66,8 +114,15 @@ class SignalScorer:
         """
         self.weights = config.get("weights", {})
         self.thresholds = config.get("thresholds", {})
-        self.alert_threshold = self.thresholds.get("strong_alert", 0.6)
-        self.watch_threshold = self.thresholds.get("watch_list", 0.4)
+        self.alert_threshold = self.thresholds.get(
+            "strong_alert", DEFAULT_STRONG_ALERT_THRESHOLD
+        )
+        self.watch_threshold = self.thresholds.get(
+            "watch_list", DEFAULT_WATCH_THRESHOLD
+        )
+        self.min_confidence = self.thresholds.get(
+            "min_confidence", DEFAULT_MIN_CONFIDENCE
+        )
 
     def score(
         self,
@@ -91,30 +146,36 @@ class SignalScorer:
         Returns:
             FinalSignal with combined score and alert decision.
         """
-        # Clamp inputs
-        news_vol = max(-3.0, min(3.0, news_volume_zscore)) / 3.0  # Normalize to [-1, 1]
+        # Clamp inputs, normalizing the news-volume z-score to [-1, 1]
+        news_vol = (
+            max(-NEWS_VOLUME_ZSCORE_CLAMP, min(NEWS_VOLUME_ZSCORE_CLAMP, news_volume_zscore))
+            / NEWS_VOLUME_ZSCORE_CLAMP
+        )
         price_conf = max(-1.0, min(1.0, price_confirmation))
 
         # Source credibility amplifies the DeepSeek sentiment (0=no boost, 1=full boost)
         credibility_boost = source_credibility  # 0.0 to 1.0
-        credibility_weight = self.weights.get("source_credibility", 0.15)
+        credibility_weight = self.weights.get(
+            "source_credibility", DEFAULT_WEIGHTS["source_credibility"]
+        )
 
         # Combined score: credibility amplifies sentiment magnitude
         score = (
-            self.weights.get("deepseek_sentiment", 0.50)
+            self.weights.get("deepseek_sentiment", DEFAULT_WEIGHTS["deepseek_sentiment"])
             * deepseek.sentiment
             * (1.0 + credibility_weight * credibility_boost)
-            + self.weights.get("news_volume", 0.20) * news_vol
-            + self.weights.get("price_confirmation", 0.15) * price_conf
+            + self.weights.get("news_volume", DEFAULT_WEIGHTS["news_volume"]) * news_vol
+            + self.weights.get("price_confirmation", DEFAULT_WEIGHTS["price_confirmation"])
+            * price_conf
         )
 
-        # Clamp to [-1.0, 1.0]
-        score = max(-1.0, min(1.0, score))
+        # Clamp to the configured score range
+        score = max(SCORE_MIN, min(SCORE_MAX, score))
 
-        # Determine if alert should fire
+        # Determine if alert should fire: above threshold AND confident enough
         should_alert = abs(score) >= self.alert_threshold
-        if should_alert and deepseek.confidence == "low":
-            should_alert = False  # Don't alert on low confidence
+        if should_alert and not self._meets_min_confidence(deepseek.confidence):
+            should_alert = False
 
         # Alert label
         alert_label = self._get_alert_label(score)
@@ -154,12 +215,16 @@ class SignalScorer:
     ) -> FinalSignal:
         """Create a signal for a cascade effect (secondary impact)."""
         direction = cascade_effect.get("direction", "neutral")
-        sentiment = 0.6 if direction == "bullish" else -0.6
+        sentiment = (
+            CASCADE_SENTIMENT_MAGNITUDE
+            if direction == "bullish"
+            else -CASCADE_SENTIMENT_MAGNITUDE
+        )
 
         score = sentiment  # Cascade signals get pure sentiment score
 
         action = "buy" if direction == "bullish" else "sell"
-        if abs(score) < 0.4:
+        if abs(score) < CASCADE_ACTION_THRESHOLD:
             action = "hold"
 
         return FinalSignal(
@@ -179,28 +244,21 @@ class SignalScorer:
             alert_label=self._get_alert_label(score),
         )
 
+    def _meets_min_confidence(self, confidence: str) -> bool:
+        """Whether a DeepSeek confidence meets the configured minimum to alert."""
+        return CONFIDENCE_ORDER.get(confidence, 0) >= CONFIDENCE_ORDER.get(
+            self.min_confidence, CONFIDENCE_ORDER[DEFAULT_MIN_CONFIDENCE]
+        )
+
     @staticmethod
     def _get_alert_label(score: float) -> str:
         """Get human-readable label for a score."""
-        if score >= 0.6:
-            return "🟢 STRONG BUY"
-        elif score >= 0.4:
-            return "🟢 BUY"
-        elif score >= 0.2:
-            return "🟡 WEAK BUY"
-        elif score > -0.2:
-            return "⚪ HOLD"
-        elif score > -0.4:
-            return "🟡 WEAK SELL"
-        elif score > -0.6:
-            return "🔴 SELL"
-        else:
-            return "🔴 STRONG SELL"
+        return signal_label(score)
 
     @staticmethod
     def _resolve_action(deepseek_action: str, score: float) -> str:
         """Resolve the final action, possibly overriding DeepSeek."""
-        if abs(score) < 0.2:
+        if abs(score) < ACTION_HOLD_THRESHOLD:
             return "hold"
         if deepseek_action in ("buy", "sell", "hold"):
             return deepseek_action

@@ -32,8 +32,10 @@ signals:
     source_credibility: 0.15
     price_confirmation: 0.15
   thresholds:
-    strong_alert: 0.6             # |score| > 0.6 → push alert
-    watch_list: 0.4               # |score| > 0.4 → include in daily summary
+    strong_alert: 0.5             # |score| >= 0.5 → push alert. Lowered from 0.6:
+                                  # most feeds are tier-2, which caps the sentiment
+                                  # term so 0.6 was effectively unreachable.
+    watch_list: 0.4               # |score| >= 0.4 → include in daily summary
     min_confidence: "medium"      # Only alert if DeepSeek confidence >= medium
 
 # --- News Sources ---

@@ -40,7 +40,7 @@ signals:
     source_credibility: 0.15
     price_confirmation: 0.15
   thresholds:
-    strong_alert: 0.6
+    strong_alert: 0.5             # |score| >= 0.5 → push alert (see settings.yaml)
     watch_list: 0.4
     min_confidence: "medium"
 

@@ -29,8 +29,20 @@ from trading_expert.fetchers.news import RSSFetcher, NewsAPIFetcher, GNewsFetche
 from trading_expert.fetchers.prices import PriceFetcher
 from trading_expert.analysis.prefilter import Prefilter
 from trading_expert.analysis.deepseek import DeepSeekAnalyzer, ArticleContext
-from trading_expert.analysis.signals import SignalScorer
+from trading_expert.analysis.signals import SignalScorer, compute_price_confirmation
+from trading_expert.analysis.news_volume import (
+    compute_batch_volume_zscores,
+    count_articles_per_ticker,
+)
 from trading_expert.notifications.telegram import TelegramNotifier
+from trading_expert.constants import (
+    DEFAULT_ALERT_COOLDOWN_MINUTES,
+    DEFAULT_MAX_ALERTS_PER_DAY,
+    DEFAULT_SOURCE_CREDIBILITY,
+    FETCH_LOOKBACK_HOURS,
+    PREFILTER_SENTIMENT_THRESHOLD,
+    SOURCE_TIER_CREDIBILITY,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +116,7 @@ async def _intraday_fetch_bmv_async():
         if gnews_key:
             fetchers.append(GNewsFetcher(gnews_key, language="es"))
 
-        since = datetime.now(timezone.utc) - timedelta(hours=1)
+        since = datetime.now(timezone.utc) - timedelta(hours=FETCH_LOOKBACK_HOURS)
         all_articles = []
         for fetcher in fetchers:
             try:
@@ -122,7 +134,7 @@ async def _intraday_fetch_bmv_async():
         prefilter = Prefilter(
             tickers_map=tickers_map,
             urgency_keywords=settings.get("urgency_keywords", {}),
-            sentiment_threshold=0.6,
+            sentiment_threshold=PREFILTER_SENTIMENT_THRESHOLD,
         )
         results = prefilter.score_batch(all_articles)
 
@@ -131,6 +143,11 @@ async def _intraday_fetch_bmv_async():
 
         if not escalated:
             return {"status": "ok", "articles": len(all_articles), "signals": 0}
+
+        # News-volume z-scores: how unusual is each ticker's coverage this cycle?
+        volume_zscores = compute_batch_volume_zscores(
+            count_articles_per_ticker([r.matched_tickers for r in results])
+        )
 
         # ── Step 3: Store articles in DB ──────────────────────────────
         for article in all_articles:
@@ -170,8 +187,12 @@ async def _intraday_fetch_bmv_async():
         # ── Step 6: Analyze each escalated article ────────────────────
         signal_scorer = SignalScorer(settings.get("signals", {}))
         notifier = TelegramNotifier(
-            alert_cooldown_minutes=settings.get("telegram", {}).get("alert_cooldown_minutes", 30),
-            max_alerts_per_day=settings.get("telegram", {}).get("max_alerts_per_day", 20),
+            alert_cooldown_minutes=settings.get("telegram", {}).get(
+                "alert_cooldown_minutes", DEFAULT_ALERT_COOLDOWN_MINUTES
+            ),
+            max_alerts_per_day=settings.get("telegram", {}).get(
+                "max_alerts_per_day", DEFAULT_MAX_ALERTS_PER_DAY
+            ),
         )
 
         signals_generated = 0
@@ -216,13 +237,24 @@ async def _intraday_fetch_bmv_async():
                 price_context=price_context,
             )
 
-            # Compute source credibility
-            source_cred = 1.0 if article.source_tier == 1 else 0.5 if article.source_tier == 2 else 0.2
+            # Compute source credibility from the article's source tier
+            source_cred = SOURCE_TIER_CREDIBILITY.get(
+                article.source_tier, DEFAULT_SOURCE_CREDIBILITY
+            )
+
+            # News-volume z-score and price confirmation for this signal's ticker
+            news_volume_zscore = volume_zscores.get(deepseek_signal.primary_ticker, 0.0)
+            price_confirmation = compute_price_confirmation(
+                sentiment=deepseek_signal.sentiment,
+                change_pct=price.change_pct if price else None,
+            )
 
             # Score the signal
             final_signal = signal_scorer.score(
                 deepseek=deepseek_signal,
+                news_volume_zscore=news_volume_zscore,
                 source_credibility=source_cred,
+                price_confirmation=price_confirmation,
                 price=price.close if price else None,
             )
 
