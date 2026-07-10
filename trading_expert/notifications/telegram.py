@@ -2,7 +2,8 @@
 Telegram Bot — sends trading alerts to Android phone.
 
 Uses python-telegram-bot library for async bot operation.
-The bot sends formatted alerts and handles user commands.
+The bot sends formatted alerts, handles user commands, and supports
+free-text conversations powered by DeepSeek-R1 (deepseek-reasoner).
 
 Setup:
     1. Create a bot via @BotFather on Telegram → get token
@@ -10,6 +11,7 @@ Setup:
     3. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env
 """
 
+import asyncio
 import logging
 import os
 from datetime import datetime, timedelta
@@ -223,18 +225,19 @@ class TelegramNotifier:
 
 # ── Optional Polling Bot for Command Handling ────────────────────────────────
 
-async def start_command_bot(
+def start_command_bot(
     bot_token: str,
     signal_repo,
     portfolio_tracker,
 ):
-    """Start a Telegram bot that listens for user commands.
+    """Start a Telegram bot that listens for user commands and chat messages.
 
-    This runs a polling loop that handles /status, /signals, /portfolio,
-    /mute, /unmute, /threshold, and /help commands.
+    Handles /status, /signals, /portfolio, /mute, /unmute, /threshold,
+    /help, /ask, and /reset commands, plus free-text conversational
+    trading questions powered by DeepSeek-R1.
 
-    Note: This is optional. The core alert system works push-only.
-    Use this when you want interactive querying from the phone.
+    This is a blocking call — python-telegram-bot manages its own event loop
+    internally so it must NOT be called from inside asyncio.run().
 
     Args:
         bot_token: Telegram bot token.
@@ -245,10 +248,39 @@ async def start_command_bot(
     from telegram.ext import (
         Application,
         CommandHandler,
+        MessageHandler,
+        filters,
         ContextTypes,
     )
 
+    from trading_expert.analysis.chat_advisor import TradingChatAdvisor
+
     notifier = TelegramNotifier(bot_token=bot_token)
+    advisor = TradingChatAdvisor()
+
+    # ── Shared chat helper ───────────────────────────────────────────────────
+
+    async def _run_chat(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Send message to advisor while streaming a typing indicator."""
+        chat_id = update.effective_chat.id
+
+        async def _typing_loop():
+            while True:
+                await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+                await asyncio.sleep(4)
+
+        typing_task = asyncio.create_task(_typing_loop())
+        try:
+            response = await advisor.ask(chat_id, text)
+        finally:
+            typing_task.cancel()
+
+        # Split into chunks if R1 returns a very long response
+        for i in range(0, max(1, len(response)), 4000):
+            chunk = response[i : i + 4000]
+            await update.message.reply_text(chunk)
+
+    # ── Command handlers ─────────────────────────────────────────────────────
 
     async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show current signal summary. Optional universe filter via args."""
@@ -347,6 +379,31 @@ async def start_command_bot(
         """Show help."""
         await update.message.reply_text(format_help(), parse_mode="Markdown")
 
+    async def cmd_ask(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Ask a trading question explicitly: /ask Is NVDA a good buy now?"""
+        question = " ".join(context.args) if context.args else ""
+        if not question:
+            await update.message.reply_text(
+                "Usage: /ask <your trading question>\n"
+                "Example: /ask Should I buy NVDA at current levels?"
+            )
+            return
+        await _run_chat(update, context, question)
+
+    async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Clear conversation history and start fresh."""
+        advisor.clear_history(update.effective_chat.id)
+        await update.message.reply_text(
+            "🗑️ Conversation history cleared. Start a new question anytime."
+        )
+
+    async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle free-text trading questions (non-command messages)."""
+        text = update.message.text
+        if not text:
+            return
+        await _run_chat(update, context, text)
+
     # Build the app
     app = Application.builder().token(bot_token).build()
 
@@ -358,6 +415,10 @@ async def start_command_bot(
     app.add_handler(CommandHandler("threshold", cmd_threshold))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("start", cmd_help))
+    app.add_handler(CommandHandler("ask", cmd_ask))
+    app.add_handler(CommandHandler("reset", cmd_reset))
+    # Free-text chat — must come last so commands take priority
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    logger.info("Starting Telegram command bot (polling)...")
-    await app.run_polling()
+    logger.info("Starting Telegram command bot with chat (polling)...")
+    app.run_polling()  # blocking; manages its own event loop internally

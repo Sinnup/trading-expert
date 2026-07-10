@@ -185,12 +185,22 @@ def format_error(message: str) -> str:
 
 def format_help() -> str:
     """Format the help message for bot commands."""
-    return """🤖 **Trading Expert Bot — Commands**
+    return """🤖 *Trading Expert Bot*
 
-/status — Current signal summary for all tracked tickers
-/signals NVDA — Last 5 signals for a ticker
+*Chat* — just type any trading question and the AI advisor (DeepSeek-R1) will respond:
+  "Should I buy NVDA at these levels?"
+  "What's the outlook for semiconductors?"
+  "Explain the TSMC supply chain impact on AMD"
+
+*Commands*
+/ask <question> — Same as typing; useful in group chats
+/reset — Clear conversation history and start fresh
+/status — Today's signal summary for all tracked tickers
+/signals NVDA — Last 5 signals for a specific ticker
 /portfolio — Paper trading P&L summary
 /mute 4h — Snooze alerts (1h, 4h, 8h, 24h)
 /unmute — Resume alerts
 /threshold 0.8 — Set minimum alert threshold
-/help — Show this message"""
+/help — Show this message
+
+_Note: The advisor only discusses stocks and trading topics._"""

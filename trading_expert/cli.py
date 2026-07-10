@@ -19,6 +19,9 @@ Universes:
 import os
 import click
 import logging
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -242,6 +245,46 @@ def backtest(days: int, universe: str):
             f"📐 Backtesting {UNIVERSE_CONFIG[universe]['label']} "
             f"from last {days} days..."
         )
+
+
+@cli.command()
+def bot():
+    """Start the interactive Telegram bot with AI chat (DeepSeek-R1).
+
+    Handles free-text trading questions, /ask, /status, /signals,
+    /portfolio, /reset, and all other commands. Runs until Ctrl+C.
+    """
+    from trading_expert.models import init_db, get_session
+    from trading_expert.models.repository import SignalRepository
+    from trading_expert.portfolio.tracker import PaperPortfolio
+    from trading_expert.notifications.telegram import start_command_bot
+
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    deepseek_key = os.getenv("DEEPSEEK_API_KEY", "")
+
+    if not bot_token:
+        click.echo("❌ TELEGRAM_BOT_TOKEN not set in .env", err=True)
+        return
+    if not deepseek_key:
+        click.echo("❌ DEEPSEEK_API_KEY not set in .env", err=True)
+        return
+
+    init_db()
+    session = get_session()
+    signal_repo = SignalRepository(session)
+    portfolio = PaperPortfolio()
+
+    click.echo("🤖 Telegram bot starting — send any trading question to your bot.")
+    click.echo("   /help for commands | /reset to clear chat history | Ctrl+C to stop.")
+
+    try:
+        start_command_bot(
+            bot_token=bot_token,
+            signal_repo=signal_repo,
+            portfolio_tracker=portfolio,
+        )
+    except KeyboardInterrupt:
+        click.echo("\n🛑 Bot stopped.")
 
 
 if __name__ == "__main__":
