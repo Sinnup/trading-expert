@@ -64,6 +64,20 @@ services:
       timeout: 10s
       retries: 3
 
+  # --- Telegram Bot (chat + alerts) ---
+  bot:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    command: trading-agent bot
+
   # --- CLI / Manual analysis container ---
   app:
     build: .
