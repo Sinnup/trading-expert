@@ -140,9 +140,30 @@ class PaperPortfolio:
                     break
 
                 close_qty = min(remaining_to_close, buy.quantity)
-                buy.closed_at = datetime.now(timezone.utc)
-                buy.close_price = price
-                buy.pnl_realized = (price - buy.price) * close_qty
+                now = datetime.now(timezone.utc)
+
+                if close_qty == buy.quantity:
+                    # Whole lot consumed — close it in place.
+                    buy.closed_at = now
+                    buy.close_price = price
+                    buy.pnl_realized = (price - buy.price) * close_qty
+                else:
+                    # Partial fill — split the lot: shrink the still-open remainder
+                    # and record the closed portion as its own row so that both
+                    # realized P&L and open-position quantities stay correct.
+                    buy.quantity -= close_qty
+                    session.add(PaperTrade(
+                        ticker=buy.ticker,
+                        action="buy",
+                        quantity=close_qty,
+                        price=buy.price,
+                        signal_id=buy.signal_id,
+                        executed_at=buy.executed_at,
+                        closed_at=now,
+                        close_price=price,
+                        pnl_realized=(price - buy.price) * close_qty,
+                    ))
+
                 remaining_to_close -= close_qty
 
             session.add(trade)

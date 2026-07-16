@@ -1,0 +1,102 @@
+"""Tests for the paper-trading portfolio tracker.
+
+The tracker is wired into both intraday pipelines (a buy/sell is executed
+whenever an alert-triggering signal fires), so its buy/sell/P&L behaviour is
+now load-bearing. These tests exercise it against a throwaway SQLite file.
+"""
+
+import pytest
+
+# Import model modules so their tables are registered on Base.metadata
+# before init_db() creates them.
+import trading_expert.models.article  # noqa: F401
+import trading_expert.models.signal  # noqa: F401
+import trading_expert.models.portfolio  # noqa: F401
+from trading_expert.models import init_db, get_session
+from trading_expert.models.portfolio import PaperTrade
+from trading_expert.portfolio.tracker import PaperPortfolio
+
+
+@pytest.fixture
+def paper_db(tmp_path, monkeypatch):
+    """Point the DB layer at a fresh per-test SQLite file.
+
+    The tracker opens a new session (and therefore a new engine) per call, so
+    a file-based DB is required — an in-memory one would be discarded between
+    calls. get_engine reads DATABASE_URL at call time, so setting the env var
+    is enough to redirect every get_session() the tracker makes.
+    """
+    db_path = tmp_path / "test_trading.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
+    init_db()
+    yield
+
+
+class TestExecuteBuy:
+    def test_buy_records_trade_and_reduces_cash(self, paper_db):
+        portfolio = PaperPortfolio()
+        trade = portfolio.execute_buy("NVDA", price=100.0, quantity=10)
+
+        assert trade is not None
+        assert trade.action == "buy"
+        assert trade.quantity == 10
+
+        summary = portfolio.get_summary()
+        # 100k starting capital - (100 * 10) spent
+        assert summary["cash"] == pytest.approx(99_000.0)
+        assert "NVDA" in summary["holdings"]
+        assert summary["holdings"]["NVDA"]["quantity"] == 10
+
+    def test_buy_rejected_when_insufficient_cash(self, paper_db):
+        portfolio = PaperPortfolio(initial_capital=500.0)
+        trade = portfolio.execute_buy("NVDA", price=100.0, quantity=10)  # needs 1000
+
+        assert trade is None
+        # No trade should have been persisted
+        session = get_session()
+        try:
+            assert session.query(PaperTrade).count() == 0
+        finally:
+            session.close()
+
+
+class TestExecuteSell:
+    def test_sell_closes_buy_fifo_and_realizes_pnl(self, paper_db):
+        portfolio = PaperPortfolio()
+        portfolio.execute_buy("NVDA", price=100.0, quantity=10)
+        sell = portfolio.execute_sell("NVDA", price=120.0, quantity=10)
+
+        assert sell is not None
+        summary = portfolio.get_summary()
+        # (120 - 100) * 10 = 200 realized profit
+        assert summary["realized_pnl"] == pytest.approx(200.0)
+        # Position is fully closed
+        assert "NVDA" not in summary["holdings"]
+        # Cash: 100k - 1000 buy + 1200 sell proceeds
+        assert summary["cash"] == pytest.approx(100_200.0)
+
+    def test_sell_without_position_is_noop_long_only(self, paper_db):
+        """The paper portfolio does not short: selling unheld stock no-ops."""
+        portfolio = PaperPortfolio()
+        sell = portfolio.execute_sell("NVDA", price=120.0, quantity=10)
+
+        assert sell is None
+        session = get_session()
+        try:
+            assert session.query(PaperTrade).count() == 0
+        finally:
+            session.close()
+
+    def test_partial_sell_keeps_remainder_and_realizes_partial_pnl(self, paper_db):
+        portfolio = PaperPortfolio()
+        portfolio.execute_buy("NVDA", price=100.0, quantity=10)
+        sell = portfolio.execute_sell("NVDA", price=110.0, quantity=4)
+
+        assert sell is not None
+        summary = portfolio.get_summary()
+        # 6 shares remain open after selling 4 of 10
+        assert summary["holdings"]["NVDA"]["quantity"] == 6
+        # Realized only on the 4 sold: (110 - 100) * 4
+        assert summary["realized_pnl"] == pytest.approx(40.0)
+        # Cash: 100k - 1000 buy + 440 sell proceeds
+        assert summary["cash"] == pytest.approx(99_440.0)

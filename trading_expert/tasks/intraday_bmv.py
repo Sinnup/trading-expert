@@ -35,11 +35,13 @@ from trading_expert.analysis.news_volume import (
     count_articles_per_ticker,
 )
 from trading_expert.notifications.telegram import TelegramNotifier
+from trading_expert.portfolio.tracker import PaperPortfolio
 from trading_expert.constants import (
     DEFAULT_ALERT_COOLDOWN_MINUTES,
     DEFAULT_MAX_ALERTS_PER_DAY,
     DEFAULT_SOURCE_CREDIBILITY,
     FETCH_LOOKBACK_HOURS,
+    PAPER_TRADE_SIZE,
     PREFILTER_SENTIMENT_THRESHOLD,
     SOURCE_TIER_CREDIBILITY,
 )
@@ -196,6 +198,7 @@ async def _intraday_fetch_bmv_async():
         )
 
         signals_generated = 0
+        pending_paper_trades: list[tuple[int, str, str, float]] = []
         for result in escalated:
             article = next(
                 (a for a in all_articles if a.article_id == result.article_id),
@@ -276,6 +279,7 @@ async def _intraday_fetch_bmv_async():
                 price_at_signal=final_signal.price_at_signal,
             )
             session.add(db_signal)
+            session.flush()  # Assign db_signal.id before paper trade FK reference
             signals_generated += 1
 
             # Update article with DeepSeek result
@@ -291,7 +295,7 @@ async def _intraday_fetch_bmv_async():
 
             # Send alert if threshold crossed
             if final_signal.should_alert:
-                await notifier.send_alert(
+                alert_sent = await notifier.send_alert(
                     ticker=final_signal.ticker,
                     score=final_signal.score,
                     action=final_signal.action,
@@ -303,8 +307,37 @@ async def _intraday_fetch_bmv_async():
                     price=final_signal.price_at_signal,
                     alert_label=final_signal.alert_label,
                 )
+                # Only trade when the alert actually went out — the notifier's
+                # per-ticker cooldown and daily rate-limit prevent the same fresh
+                # news (re-escalated every cycle) from stacking duplicate trades.
+                if (
+                    alert_sent
+                    and final_signal.action in ("buy", "sell")
+                    and final_signal.price_at_signal
+                ):
+                    pending_paper_trades.append((
+                        db_signal.id,
+                        final_signal.ticker,
+                        final_signal.action,
+                        final_signal.price_at_signal,
+                    ))
 
         session.commit()
+
+        # Execute paper trades for alert-triggering signals (signals committed above)
+        if pending_paper_trades:
+            portfolio = PaperPortfolio()
+            for sig_id, ticker, action, price in pending_paper_trades:
+                quantity = int(PAPER_TRADE_SIZE / price)
+                if quantity < 1:
+                    logger.info(f"PAPER TRADE skipped: {ticker} price ${price:.2f} exceeds trade size")
+                    continue
+                if action == "buy":
+                    portfolio.execute_buy(ticker, price, quantity, signal_id=sig_id)
+                else:
+                    # execute_sell is long-only: it no-ops if we hold no position
+                    # (the paper portfolio does not short).
+                    portfolio.execute_sell(ticker, price, quantity, signal_id=sig_id)
 
         logger.info(
             f"BMV intraday cycle complete: {len(all_articles)} articles, "

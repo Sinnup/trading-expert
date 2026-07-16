@@ -65,3 +65,9 @@ PREFILTER_SENTIMENT_THRESHOLD: float = 0.6
 # ── Telegram notifier defaults ───────────────────────────────────────────────
 DEFAULT_ALERT_COOLDOWN_MINUTES: int = 30
 DEFAULT_MAX_ALERTS_PER_DAY: int = 20
+
+# ── Paper trading ─────────────────────────────────────────────────────────────
+# Fixed cash amount allocated per paper trade (buy or sell), expressed in each
+# universe's own quote currency (USD for semiconductor, MXN for BMV). If the
+# stock price exceeds this value, the trade is skipped.
+PAPER_TRADE_SIZE: float = 1000.0
