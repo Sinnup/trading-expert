@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 CHAT_SYSTEM_PROMPT = """You are an AI trading advisor specialized in semiconductor, AI, cloud, and tech stock investments. You assist investors with buy/sell/hold decisions backed by fundamental analysis, supply chain dynamics, and macro context.
 
 ## Scope — ONLY answer questions about:
+- The user's own paper-trading wallet/portfolio: current value, cash, open positions, holdings, and P&L. When the user asks about "my wallet", "my portfolio", "my positions", "my cash", or "my P&L", answer from the LIVE WALLET SNAPSHOT provided below (when present) — never invent numbers, and if no snapshot is present say the wallet data is unavailable right now.
 - Individual stock investment decisions (buy, sell, hold, entry/exit points)
 - Company fundamentals (earnings, revenue, margins, guidance, valuation)
 - Semiconductor and tech supply chain dynamics and cascade effects
@@ -61,6 +62,31 @@ OFF_TOPIC_RESPONSE = (
 # Maximum user+assistant turns kept in memory per chat (system message excluded)
 MAX_HISTORY_MESSAGES = 10
 
+
+def format_wallet_context(summary: dict) -> str:
+    """Render a live paper-wallet snapshot as a system-message the model grounds on.
+
+    Kept compact (cash, value, P&L, holdings) so it can be injected on every
+    turn without materially inflating token usage.
+    """
+    lines = [
+        "[LIVE WALLET SNAPSHOT — the user's paper-trading portfolio right now]",
+        f"Total value: ${summary['total_value']:,.2f} | "
+        f"Cash: ${summary['cash']:,.2f} | "
+        f"Total P&L: ${summary['pnl_total']:,.2f} ({summary['pnl_pct']:+.2f}%)",
+    ]
+    holdings = summary.get("holdings", {})
+    if holdings:
+        lines.append(f"Open positions ({len(holdings)}):")
+        for ticker, pos in holdings.items():
+            lines.append(
+                f"- {ticker}: {pos['quantity']:.0f} sh @ avg "
+                f"${pos['avg_price']:.2f} (last ${pos['current_price']:.2f})"
+            )
+    else:
+        lines.append("Open positions: none (100% cash).")
+    return "\n".join(lines)
+
 # Telegram message size limit
 TELEGRAM_MAX_CHARS = 4096
 
@@ -85,12 +111,21 @@ class TradingChatAdvisor:
         # {chat_id: [{"role": "user"/"assistant", "content": "..."}, ...]}
         self._history: dict[int | str, list[dict]] = defaultdict(list)
 
-    async def ask(self, chat_id: int | str, user_message: str) -> str:
+    async def ask(
+        self,
+        chat_id: int | str,
+        user_message: str,
+        portfolio_summary: Optional[dict] = None,
+    ) -> str:
         """Process a user message and return a deep-reasoning trading response.
 
         Args:
             chat_id: Telegram chat ID — used as the conversation key.
             user_message: The user's free-text message.
+            portfolio_summary: Optional live paper-wallet summary (as returned by
+                ``PaperPortfolio.get_summary``). When provided, it is injected as
+                a system message so the model can answer wallet/portfolio
+                questions from real data instead of guessing.
 
         Returns:
             Assistant response text (plain, no Telegram markdown).
@@ -103,7 +138,12 @@ class TradingChatAdvisor:
             self._history[chat_id] = history[-MAX_HISTORY_MESSAGES:]
             history = self._history[chat_id]
 
-        messages = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}] + history
+        system_messages = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}]
+        if portfolio_summary is not None:
+            system_messages.append(
+                {"role": "system", "content": format_wallet_context(portfolio_summary)}
+            )
+        messages = system_messages + history
 
         try:
             loop = asyncio.get_event_loop()

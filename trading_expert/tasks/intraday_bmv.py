@@ -35,14 +35,16 @@ from trading_expert.analysis.news_volume import (
     count_articles_per_ticker,
 )
 from trading_expert.notifications.telegram import TelegramNotifier
-from trading_expert.portfolio.tracker import PaperPortfolio
+from trading_expert.portfolio.tracker import PaperPortfolio, eligible_for_paper_trade
 from trading_expert.constants import (
+    ACTION_BUY,
     DEFAULT_ALERT_COOLDOWN_MINUTES,
     DEFAULT_MAX_ALERTS_PER_DAY,
     DEFAULT_SOURCE_CREDIBILITY,
     FETCH_LOOKBACK_HOURS,
     PAPER_TRADE_SIZE,
     PREFILTER_SENTIMENT_THRESHOLD,
+    SIGNAL_TYPE_INTRADAY_BMV,
     SOURCE_TIER_CREDIBILITY,
 )
 
@@ -275,7 +277,7 @@ async def _intraday_fetch_bmv_async():
                 cascade_parent=None,
                 source_article_ids=final_signal.source_article_ids,
                 urgency=final_signal.urgency,
-                signal_type="intraday_bmv",  # Distinguish from semiconductor signals
+                signal_type=SIGNAL_TYPE_INTRADAY_BMV,  # Distinguish from semiconductor signals
                 price_at_signal=final_signal.price_at_signal,
             )
             session.add(db_signal)
@@ -295,7 +297,7 @@ async def _intraday_fetch_bmv_async():
 
             # Send alert if threshold crossed
             if final_signal.should_alert:
-                alert_sent = await notifier.send_alert(
+                await notifier.send_alert(
                     ticker=final_signal.ticker,
                     score=final_signal.score,
                     action=final_signal.action,
@@ -307,13 +309,15 @@ async def _intraday_fetch_bmv_async():
                     price=final_signal.price_at_signal,
                     alert_label=final_signal.alert_label,
                 )
-                # Only trade when the alert actually went out — the notifier's
-                # per-ticker cooldown and daily rate-limit prevent the same fresh
-                # news (re-escalated every cycle) from stacking duplicate trades.
-                if (
-                    alert_sent
-                    and final_signal.action in ("buy", "sell")
-                    and final_signal.price_at_signal
+                # Paper-trade on the signal *decision* (should_alert), not on
+                # whether the Telegram alert physically sent: a non-actionable
+                # hold for the same ticker often trips the notifier cooldown
+                # first and would suppress the actionable buy/sell alert.
+                # Duplicate stacking is prevented at the position level below.
+                if eligible_for_paper_trade(
+                    final_signal.action,
+                    final_signal.price_at_signal,
+                    final_signal.should_alert,
                 ):
                     pending_paper_trades.append((
                         db_signal.id,
@@ -332,7 +336,13 @@ async def _intraday_fetch_bmv_async():
                 if quantity < 1:
                     logger.info(f"PAPER TRADE skipped: {ticker} price ${price:.2f} exceeds trade size")
                     continue
-                if action == "buy":
+                if action == ACTION_BUY:
+                    # One open position per ticker: skip re-buying the same
+                    # re-escalated news every cycle (replaces the old alert
+                    # cooldown dedup). A later sell frees the ticker.
+                    if portfolio.has_open_position(ticker):
+                        logger.info(f"PAPER BUY skipped: already holding {ticker}")
+                        continue
                     portfolio.execute_buy(ticker, price, quantity, signal_id=sig_id)
                 else:
                     # execute_sell is long-only: it no-ops if we hold no position

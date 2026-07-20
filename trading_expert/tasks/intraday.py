@@ -37,14 +37,17 @@ from trading_expert.analysis.news_volume import (
     count_articles_per_ticker,
 )
 from trading_expert.notifications.telegram import TelegramNotifier
-from trading_expert.portfolio.tracker import PaperPortfolio
+from trading_expert.portfolio.tracker import PaperPortfolio, eligible_for_paper_trade
 from trading_expert.constants import (
+    ACTION_BUY,
     DEFAULT_ALERT_COOLDOWN_MINUTES,
     DEFAULT_MAX_ALERTS_PER_DAY,
     DEFAULT_SOURCE_CREDIBILITY,
     FETCH_LOOKBACK_HOURS,
     PAPER_TRADE_SIZE,
     PREFILTER_SENTIMENT_THRESHOLD,
+    SIGNAL_TYPE_CASCADE,
+    SIGNAL_TYPE_INTRADAY,
     SOURCE_TIER_CREDIBILITY,
 )
 
@@ -295,7 +298,7 @@ async def _intraday_fetch_async():
                 cascade_parent=final_signal.cascade_parent,
                 source_article_ids=final_signal.source_article_ids,
                 urgency=final_signal.urgency,
-                signal_type="intraday",
+                signal_type=SIGNAL_TYPE_INTRADAY,
                 price_at_signal=final_signal.price_at_signal,
             )
             session.add(db_signal)
@@ -315,7 +318,7 @@ async def _intraday_fetch_async():
 
             # Send alert if threshold crossed
             if final_signal.should_alert:
-                alert_sent = await notifier.send_alert(
+                await notifier.send_alert(
                     ticker=final_signal.ticker,
                     score=final_signal.score,
                     action=final_signal.action,
@@ -327,13 +330,15 @@ async def _intraday_fetch_async():
                     price=final_signal.price_at_signal,
                     alert_label=final_signal.alert_label,
                 )
-                # Only trade when the alert actually went out — the notifier's
-                # per-ticker cooldown and daily rate-limit prevent the same fresh
-                # news (re-escalated every cycle) from stacking duplicate trades.
-                if (
-                    alert_sent
-                    and final_signal.action in ("buy", "sell")
-                    and final_signal.price_at_signal
+                # Paper-trade on the signal *decision* (should_alert), not on
+                # whether the Telegram alert physically sent: a non-actionable
+                # hold for the same ticker often trips the notifier cooldown
+                # first and would suppress the actionable buy/sell alert.
+                # Duplicate stacking is prevented at the position level below.
+                if eligible_for_paper_trade(
+                    final_signal.action,
+                    final_signal.price_at_signal,
+                    final_signal.should_alert,
                 ):
                     pending_paper_trades.append((
                         db_signal.id,
@@ -349,20 +354,31 @@ async def _intraday_fetch_async():
                     parent_ticker=final_signal.ticker,
                     source_article_ids=final_signal.source_article_ids,
                 )
+                # Attach a live price so the cascade play can also be paper
+                # traded (it enters the same book as primary signals). Cascade
+                # tickers are tracked universe members, so a price is usually in
+                # the cycle's fetch; if not, the cascade still alerts but is
+                # skipped for trading (can't size without a price).
+                cascade_price = prices.get(cascade_signal.ticker)
+                cascade_price_at_signal = (
+                    cascade_price.close if cascade_price else None
+                )
                 db_cascade = Signal(
                     ticker=cascade_signal.ticker,
                     score=cascade_signal.score,
                     deepseek_sentiment=cascade_signal.deepseek_sentiment,
-                    deepseek_confidence="low",
+                    deepseek_confidence=cascade_signal.deepseek_confidence,
                     action=cascade_signal.action,
                     reasoning=cascade_signal.reasoning,
                     cascade_source=True,
                     cascade_parent=cascade_signal.cascade_parent,
                     source_article_ids=cascade_signal.source_article_ids,
                     urgency="medium",
-                    signal_type="cascade",
+                    signal_type=SIGNAL_TYPE_CASCADE,
+                    price_at_signal=cascade_price_at_signal,
                 )
                 session.add(db_cascade)
+                session.flush()  # Assign db_cascade.id before paper trade FK reference
                 signals_generated += 1
 
                 # Alert on strong cascade impacts too (secondary plays)
@@ -379,9 +395,22 @@ async def _intraday_fetch_async():
                         cascade_effects=[],
                         risk_factors=[],
                         suggested_timeframe=cascade_signal.suggested_timeframe,
-                        price=None,
+                        price=cascade_price_at_signal,
                         alert_label=cascade_signal.alert_label,
                     )
+
+                # Paper-trade eligible cascade plays too (same gate as primary)
+                if eligible_for_paper_trade(
+                    cascade_signal.action,
+                    cascade_price_at_signal,
+                    cascade_signal.should_alert,
+                ):
+                    pending_paper_trades.append((
+                        db_cascade.id,
+                        cascade_signal.ticker,
+                        cascade_signal.action,
+                        cascade_price_at_signal,
+                    ))
 
         session.commit()
 
@@ -393,7 +422,13 @@ async def _intraday_fetch_async():
                 if quantity < 1:
                     logger.info(f"PAPER TRADE skipped: {ticker} price ${price:.2f} exceeds trade size")
                     continue
-                if action == "buy":
+                if action == ACTION_BUY:
+                    # One open position per ticker: skip re-buying the same
+                    # re-escalated news every cycle (replaces the old alert
+                    # cooldown dedup). A later sell frees the ticker.
+                    if portfolio.has_open_position(ticker):
+                        logger.info(f"PAPER BUY skipped: already holding {ticker}")
+                        continue
                     portfolio.execute_buy(ticker, price, quantity, signal_id=sig_id)
                 else:
                     # execute_sell is long-only: it no-ops if we hold no position

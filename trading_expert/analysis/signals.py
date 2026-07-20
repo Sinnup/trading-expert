@@ -16,7 +16,10 @@ from datetime import datetime
 from typing import Optional
 
 from trading_expert.constants import (
+    ACTION_BUY,
+    ACTION_HOLD,
     ACTION_HOLD_THRESHOLD,
+    ACTION_SELL,
     CASCADE_ACTION_THRESHOLD,
     CASCADE_SENTIMENT_MAGNITUDE,
     CONFIDENCE_ORDER,
@@ -223,9 +226,9 @@ class SignalScorer:
 
         score = sentiment  # Cascade signals get pure sentiment score
 
-        action = "buy" if direction == "bullish" else "sell"
+        action = ACTION_BUY if direction == "bullish" else ACTION_SELL
         if abs(score) < CASCADE_ACTION_THRESHOLD:
-            action = "hold"
+            action = ACTION_HOLD
 
         return FinalSignal(
             ticker=cascade_effect.get("ticker", "UNKNOWN"),
@@ -259,10 +262,10 @@ class SignalScorer:
     def _resolve_action(deepseek_action: str, score: float) -> str:
         """Resolve the final action, possibly overriding DeepSeek."""
         if abs(score) < ACTION_HOLD_THRESHOLD:
-            return "hold"
-        if deepseek_action in ("buy", "sell", "hold"):
+            return ACTION_HOLD
+        if deepseek_action in (ACTION_BUY, ACTION_SELL, ACTION_HOLD):
             return deepseek_action
-        return "hold"
+        return ACTION_HOLD
 
     @staticmethod
     def _build_alert_message(

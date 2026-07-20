@@ -229,6 +229,7 @@ def start_command_bot(
     bot_token: str,
     signal_repo,
     portfolio_tracker,
+    owner_chat_id: Optional[int | str] = None,
 ):
     """Start a Telegram bot that listens for user commands and chat messages.
 
@@ -243,6 +244,10 @@ def start_command_bot(
         bot_token: Telegram bot token.
         signal_repo: Repository for querying signals.
         portfolio_tracker: Portfolio tracker for P&L queries.
+        owner_chat_id: If set, only this chat may use the bot — the wallet and
+            signals are private, so messages from any other chat are silently
+            ignored. If None/empty, the bot is unrestricted (a warning is
+            logged) to preserve backwards-compatible behaviour.
     """
     from telegram import Update
     from telegram.ext import (
@@ -269,9 +274,18 @@ def start_command_bot(
                 await context.bot.send_chat_action(chat_id=chat_id, action="typing")
                 await asyncio.sleep(4)
 
+        # Fetch a live wallet snapshot so the advisor can answer questions about
+        # the user's own portfolio ("how's my wallet?") from real data. Best
+        # effort: if it fails, the advisor still answers general questions.
+        try:
+            portfolio_summary = portfolio_tracker.get_summary()
+        except Exception as e:
+            logger.warning("Could not load wallet snapshot for chat: %s", e)
+            portfolio_summary = None
+
         typing_task = asyncio.create_task(_typing_loop())
         try:
-            response = await advisor.ask(chat_id, text)
+            response = await advisor.ask(chat_id, text, portfolio_summary=portfolio_summary)
         finally:
             typing_task.cancel()
 
@@ -404,21 +418,41 @@ def start_command_bot(
             return
         await _run_chat(update, context, text)
 
+    # Owner-only access: restrict every handler to the owner's chat so the
+    # private wallet/signals are never exposed to strangers who find the bot.
+    if owner_chat_id:
+        owner_filter = filters.Chat(chat_id=int(owner_chat_id))
+        logger.info("Bot restricted to owner chat_id=%s", owner_chat_id)
+    else:
+        owner_filter = None
+        logger.warning(
+            "TELEGRAM_CHAT_ID not set — bot is UNRESTRICTED and will answer "
+            "any chat, exposing wallet/signal data. Set it to lock the bot down."
+        )
+
     # Build the app
     app = Application.builder().token(bot_token).build()
 
-    app.add_handler(CommandHandler("status", cmd_status))
-    app.add_handler(CommandHandler("signals", cmd_signals))
-    app.add_handler(CommandHandler("portfolio", cmd_portfolio))
-    app.add_handler(CommandHandler("mute", cmd_mute))
-    app.add_handler(CommandHandler("unmute", cmd_unmute))
-    app.add_handler(CommandHandler("threshold", cmd_threshold))
-    app.add_handler(CommandHandler("help", cmd_help))
-    app.add_handler(CommandHandler("start", cmd_help))
-    app.add_handler(CommandHandler("ask", cmd_ask))
-    app.add_handler(CommandHandler("reset", cmd_reset))
+    command_handlers = {
+        "status": cmd_status,
+        "signals": cmd_signals,
+        "portfolio": cmd_portfolio,
+        "mute": cmd_mute,
+        "unmute": cmd_unmute,
+        "threshold": cmd_threshold,
+        "help": cmd_help,
+        "start": cmd_help,
+        "ask": cmd_ask,
+        "reset": cmd_reset,
+    }
+    for command, handler in command_handlers.items():
+        app.add_handler(CommandHandler(command, handler, filters=owner_filter))
+
     # Free-text chat — must come last so commands take priority
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    text_filter = filters.TEXT & ~filters.COMMAND
+    if owner_filter is not None:
+        text_filter = text_filter & owner_filter
+    app.add_handler(MessageHandler(text_filter, handle_message))
 
     logger.info("Starting Telegram command bot with chat (polling)...")
     app.run_polling()  # blocking; manages its own event loop internally

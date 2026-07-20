@@ -7,6 +7,19 @@ loaded from the YAML config; the constants here are the in-code defaults/
 fallbacks plus the non-config structural values (clamps, scales, tier maps).
 """
 
+# ── Signal actions ───────────────────────────────────────────────────────────
+# Action labels emitted by DeepSeek analysis and cascade scoring.
+ACTION_BUY: str = "buy"
+ACTION_SELL: str = "sell"
+ACTION_HOLD: str = "hold"
+# Actions that open/close a paper position; "hold" never trades.
+TRADEABLE_ACTIONS: tuple[str, ...] = (ACTION_BUY, ACTION_SELL)
+
+# ── Signal type tags (per universe / origin) ─────────────────────────────────
+SIGNAL_TYPE_INTRADAY: str = "intraday"
+SIGNAL_TYPE_CASCADE: str = "cascade"
+SIGNAL_TYPE_INTRADAY_BMV: str = "intraday_bmv"
+
 # ── Signal scoring defaults (fallbacks when config omits them) ───────────────
 DEFAULT_WEIGHTS: dict[str, float] = {
     "deepseek_sentiment": 0.50,

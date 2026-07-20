@@ -261,6 +261,7 @@ def bot():
 
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
     deepseek_key = os.getenv("DEEPSEEK_API_KEY", "")
+    owner_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
 
     if not bot_token:
         click.echo("❌ TELEGRAM_BOT_TOKEN not set in .env", err=True)
@@ -268,6 +269,12 @@ def bot():
     if not deepseek_key:
         click.echo("❌ DEEPSEEK_API_KEY not set in .env", err=True)
         return
+    if not owner_chat_id:
+        click.echo(
+            "⚠️  TELEGRAM_CHAT_ID not set — bot will be UNRESTRICTED "
+            "(anyone can query your wallet). Set it to lock the bot to your chat.",
+            err=True,
+        )
 
     init_db()
     session = get_session()
@@ -282,6 +289,7 @@ def bot():
             bot_token=bot_token,
             signal_repo=signal_repo,
             portfolio_tracker=portfolio,
+            owner_chat_id=owner_chat_id or None,
         )
     except KeyboardInterrupt:
         click.echo("\n🛑 Bot stopped.")
