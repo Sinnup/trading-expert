@@ -90,6 +90,39 @@
 
 ## Changelog
 
+### 0.3.0 — 2026-09-29
+
+**Accuracy & the Learning Loop** — the scorer now learns its weights from realized outcomes instead of using hand-picked guesses.
+
+**feat(calibration)**: New `analysis/calibration.py` fits factor weights from graded `signal_outcomes`
+via a pure-numpy logistic regression. Reports discrimination (AUC), calibration (Brier + reliability
+bins), and alpha decay (1-day vs 7-day move). Derived weights are saved as a per-universe overlay
+(`data/learned_weights_<universe>.json`) merged over the YAML defaults — config stays pristine.
+
+**feat(signals)**: Every scored signal persists its normalized factor breakdown in `Signal.factors`
+(the training features for calibration). Price confirmation reworked from a flat additive term into a
+**multiplicative gate**: contradicting price action dampens conviction, confirming action amplifies it.
+
+**feat(tasks)**: `recalibrate-weights` Celery beat task refits weekly (Mondays) and auto-applies when
+AUC > 0.5. `check_signal_outcomes` now also captures a 1-day price snapshot to measure decay.
+
+**feat(deepseek)**: Reasoner escalation implemented — prefilter hits with `|VADER| >= reasoning_threshold`
+route to `deepseek-reasoner` via a JSON-parsing path (R1 has no function calling). Wired into both
+universes. Set the threshold `> 1` to disable.
+
+**feat(cli)**: New `trading-agent calibrate [--universe all] [--apply]` command.
+
+**feat(notifications)**: Alert push windowing (quiet overnight via `DEFAULT_ALERT_START/END_HOUR`,
+`DEFAULT_ALERT_TIMEZONE`) and buy/sell-only alert action filtering (`DEFAULT_ALERT_ACTIONS`).
+
+**fix(db)**: `init_db` now imports all models and runs an idempotent `ALTER TABLE ADD COLUMN`
+backfill, so new columns reach an existing SQLite database (no migration framework wired up).
+
+**deps**: Added `numpy` (explicit) for the calibration fit.
+
+**test**: 94 tests passing (25 new in `test_calibration.py` covering the price gate, factor capture,
+overlay persistence, the logistic fit, and end-to-end calibration).
+
 ### 0.2.0 — 2026-06-25
 
 **Multi-Universe Support** — Independent BMV (Mexican stocks) pipeline alongside semiconductor.

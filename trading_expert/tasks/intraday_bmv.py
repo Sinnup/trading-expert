@@ -30,19 +30,20 @@ from trading_expert.fetchers.prices import PriceFetcher
 from trading_expert.analysis.prefilter import Prefilter
 from trading_expert.analysis.deepseek import DeepSeekAnalyzer, ArticleContext
 from trading_expert.analysis.signals import SignalScorer, compute_price_confirmation
+from trading_expert.analysis.calibration import load_learned_weights, merge_weights
 from trading_expert.analysis.news_volume import (
     compute_batch_volume_zscores,
     count_articles_per_ticker,
 )
 from trading_expert.notifications.telegram import TelegramNotifier
-from trading_expert.portfolio.tracker import PaperPortfolio
+from trading_expert.portfolio.tracker import PaperPortfolio, eligible_for_paper_trade
 from trading_expert.constants import (
-    DEFAULT_ALERT_COOLDOWN_MINUTES,
-    DEFAULT_MAX_ALERTS_PER_DAY,
+    ACTION_BUY,
     DEFAULT_SOURCE_CREDIBILITY,
     FETCH_LOOKBACK_HOURS,
     PAPER_TRADE_SIZE,
     PREFILTER_SENTIMENT_THRESHOLD,
+    SIGNAL_TYPE_INTRADAY_BMV,
     SOURCE_TIER_CREDIBILITY,
 )
 
@@ -182,20 +183,23 @@ async def _intraday_fetch_bmv_async():
 
         analyzer = DeepSeekAnalyzer(api_key=deepseek_key)
 
+        # Reasoner escalation config (see intraday.py for rationale).
+        deepseek_cfg = settings.get("deepseek", {})
+        reasoner_model = deepseek_cfg.get("model_reasoning", "deepseek-reasoner")
+        reasoning_threshold = deepseek_cfg.get("reasoning_threshold", 1.1)
+
         # ── Step 5: Get prices ────────────────────────────────────────
         price_fetcher = PriceFetcher()
         prices = await price_fetcher.get_batch(all_tickers)
 
         # ── Step 6: Analyze each escalated article ────────────────────
-        signal_scorer = SignalScorer(settings.get("signals", {}))
-        notifier = TelegramNotifier(
-            alert_cooldown_minutes=settings.get("telegram", {}).get(
-                "alert_cooldown_minutes", DEFAULT_ALERT_COOLDOWN_MINUTES
-            ),
-            max_alerts_per_day=settings.get("telegram", {}).get(
-                "max_alerts_per_day", DEFAULT_MAX_ALERTS_PER_DAY
-            ),
+        # Apply the learned-weights overlay on top of the YAML defaults.
+        signals_cfg = dict(settings.get("signals", {}))
+        signals_cfg["weights"] = merge_weights(
+            signals_cfg.get("weights", {}), load_learned_weights("bmv")
         )
+        signal_scorer = SignalScorer(signals_cfg)
+        notifier = TelegramNotifier.from_settings(settings.get("telegram", {}))
 
         signals_generated = 0
         pending_paper_trades: list[tuple[int, str, str, float]] = []
@@ -234,10 +238,13 @@ async def _intraday_fetch_bmv_async():
                 keyword_triggers=result.keyword_triggers,
             )
 
+            # Escalate high-conviction prefilter hits to the reasoner.
+            use_reasoner = abs(result.vader_score) >= reasoning_threshold
             deepseek_signal = await analyzer.analyze(
                 article=article_ctx,
                 supply_chain_context="",  # No cascade for BMV
                 price_context=price_context,
+                model=reasoner_model if use_reasoner else None,
             )
 
             # Compute source credibility from the article's source tier
@@ -275,8 +282,9 @@ async def _intraday_fetch_bmv_async():
                 cascade_parent=None,
                 source_article_ids=final_signal.source_article_ids,
                 urgency=final_signal.urgency,
-                signal_type="intraday_bmv",  # Distinguish from semiconductor signals
+                signal_type=SIGNAL_TYPE_INTRADAY_BMV,  # Distinguish from semiconductor signals
                 price_at_signal=final_signal.price_at_signal,
+                factors=final_signal.factors,
             )
             session.add(db_signal)
             session.flush()  # Assign db_signal.id before paper trade FK reference
@@ -295,7 +303,7 @@ async def _intraday_fetch_bmv_async():
 
             # Send alert if threshold crossed
             if final_signal.should_alert:
-                alert_sent = await notifier.send_alert(
+                await notifier.send_alert(
                     ticker=final_signal.ticker,
                     score=final_signal.score,
                     action=final_signal.action,
@@ -307,13 +315,15 @@ async def _intraday_fetch_bmv_async():
                     price=final_signal.price_at_signal,
                     alert_label=final_signal.alert_label,
                 )
-                # Only trade when the alert actually went out — the notifier's
-                # per-ticker cooldown and daily rate-limit prevent the same fresh
-                # news (re-escalated every cycle) from stacking duplicate trades.
-                if (
-                    alert_sent
-                    and final_signal.action in ("buy", "sell")
-                    and final_signal.price_at_signal
+                # Paper-trade on the signal *decision* (should_alert), not on
+                # whether the Telegram alert physically sent: a non-actionable
+                # hold for the same ticker often trips the notifier cooldown
+                # first and would suppress the actionable buy/sell alert.
+                # Duplicate stacking is prevented at the position level below.
+                if eligible_for_paper_trade(
+                    final_signal.action,
+                    final_signal.price_at_signal,
+                    final_signal.should_alert,
                 ):
                     pending_paper_trades.append((
                         db_signal.id,
@@ -332,7 +342,13 @@ async def _intraday_fetch_bmv_async():
                 if quantity < 1:
                     logger.info(f"PAPER TRADE skipped: {ticker} price ${price:.2f} exceeds trade size")
                     continue
-                if action == "buy":
+                if action == ACTION_BUY:
+                    # One open position per ticker: skip re-buying the same
+                    # re-escalated news every cycle (replaces the old alert
+                    # cooldown dedup). A later sell frees the ticker.
+                    if portfolio.has_open_position(ticker):
+                        logger.info(f"PAPER BUY skipped: already holding {ticker}")
+                        continue
                     portfolio.execute_buy(ticker, price, quantity, signal_id=sig_id)
                 else:
                     # execute_sell is long-only: it no-ops if we hold no position

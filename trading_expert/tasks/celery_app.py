@@ -70,6 +70,13 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute="0", hour="6", day_of_week="*"),
         "options": {"expires": 30 * 60},
     },
+    # Weight recalibration: weekly, after the daily outcome check has run.
+    # Refits scorer weights from realized outcomes and saves the overlay.
+    "recalibrate-weights": {
+        "task": "trading_expert.tasks.daily.recalibrate_weights",
+        "schedule": crontab(minute="30", hour="6", day_of_week="1"),  # Mondays
+        "options": {"expires": 60 * 60},
+    },
     # ── BMV (Mexican Stocks) Beat Schedule ───────────────────────────
     # 24/7 monitoring for BMV stocks — Spanish-language news every 30 min
     "intraday-fetch-bmv": {

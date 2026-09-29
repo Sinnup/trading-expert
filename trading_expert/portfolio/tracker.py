@@ -11,6 +11,7 @@ import logging
 from datetime import datetime, date, timezone
 from typing import Optional
 
+from trading_expert.constants import TRADEABLE_ACTIONS
 from trading_expert.models import get_session
 from trading_expert.models.portfolio import PaperTrade, PortfolioSnapshot
 
@@ -18,6 +19,25 @@ logger = logging.getLogger(__name__)
 
 # Virtual starting capital
 DEFAULT_CAPITAL = 100_000.0  # $100k paper money
+
+
+def eligible_for_paper_trade(
+    action: str,
+    price: Optional[float],
+    should_alert: bool,
+) -> bool:
+    """Whether a primary signal should produce a paper trade.
+
+    Gated on the signal *decision* (``should_alert`` already encodes
+    ``|score| >= threshold`` AND ``confidence >= min_confidence``), NOT on
+    whether the Telegram alert physically went out. The alert send is subject
+    to a per-ticker cooldown that a non-actionable ``hold`` for the same ticker
+    frequently trips first, which would otherwise suppress the actionable
+    buy/sell alert and silently skip the trade. Duplicate stacking of the same
+    re-escalated news is instead prevented at the position level (one open
+    position per ticker) — see ``PaperPortfolio.has_open_position``.
+    """
+    return should_alert and action in TRADEABLE_ACTIONS and bool(price)
 
 
 class PaperPortfolio:
@@ -273,6 +293,16 @@ class PaperPortfolio:
             return snapshot
         finally:
             session.close()
+
+    def has_open_position(self, ticker: str) -> bool:
+        """Whether an open (unclosed) long position exists for ``ticker``.
+
+        Used to dedup buys: the same fresh news re-escalates every intraday
+        cycle and would otherwise stack a new buy each time. We hold at most one
+        open position per ticker; a subsequent sell signal closes it and frees
+        the ticker to be re-entered.
+        """
+        return self._get_position(ticker)["quantity"] > 0
 
     def _get_position(self, ticker: str) -> dict:
         """Get current position for a ticker."""

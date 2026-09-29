@@ -14,7 +14,10 @@ import trading_expert.models.signal  # noqa: F401
 import trading_expert.models.portfolio  # noqa: F401
 from trading_expert.models import init_db, get_session
 from trading_expert.models.portfolio import PaperTrade
-from trading_expert.portfolio.tracker import PaperPortfolio
+from trading_expert.portfolio.tracker import (
+    PaperPortfolio,
+    eligible_for_paper_trade,
+)
 
 
 @pytest.fixture
@@ -100,3 +103,49 @@ class TestExecuteSell:
         assert summary["realized_pnl"] == pytest.approx(40.0)
         # Cash: 100k - 1000 buy + 440 sell proceeds
         assert summary["cash"] == pytest.approx(99_440.0)
+
+
+class TestEligibleForPaperTrade:
+    """The gate is now the signal *decision* (should_alert), not alert_sent.
+
+    Regression guard for the bug where a hold's Telegram cooldown suppressed a
+    later buy's alert and silently skipped the trade.
+    """
+
+    def test_actionable_alerting_signal_with_price_is_eligible(self):
+        assert eligible_for_paper_trade("buy", price=88.47, should_alert=True)
+        assert eligible_for_paper_trade("sell", price=88.47, should_alert=True)
+
+    def test_hold_is_never_eligible(self):
+        assert not eligible_for_paper_trade("hold", price=88.47, should_alert=True)
+
+    def test_below_alert_bar_is_not_eligible(self):
+        # should_alert already folds in |score|>=threshold AND confidence>=min
+        assert not eligible_for_paper_trade("buy", price=88.47, should_alert=False)
+
+    def test_missing_price_is_not_eligible(self):
+        # Cascade signals carry price=None and so cannot be sized/traded
+        assert not eligible_for_paper_trade("buy", price=None, should_alert=True)
+
+
+class TestHasOpenPosition:
+    """Position-level dedup that replaces the old alert-cooldown dedup."""
+
+    def test_flat_ticker_has_no_open_position(self, paper_db):
+        portfolio = PaperPortfolio()
+        assert portfolio.has_open_position("NVDA") is False
+
+    def test_open_position_after_buy_then_freed_after_full_sell(self, paper_db):
+        portfolio = PaperPortfolio()
+        portfolio.execute_buy("NVDA", price=100.0, quantity=10)
+        assert portfolio.has_open_position("NVDA") is True
+
+        # A later sell closes it out and frees the ticker to be re-entered
+        portfolio.execute_sell("NVDA", price=110.0, quantity=10)
+        assert portfolio.has_open_position("NVDA") is False
+
+    def test_partial_sell_still_leaves_open_position(self, paper_db):
+        portfolio = PaperPortfolio()
+        portfolio.execute_buy("NVDA", price=100.0, quantity=10)
+        portfolio.execute_sell("NVDA", price=110.0, quantity=4)
+        assert portfolio.has_open_position("NVDA") is True

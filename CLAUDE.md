@@ -68,7 +68,7 @@ The intraday Celery task (`trading_expert/tasks/intraday.py`) wires all these st
 - **`deepseek-chat`** — used by `DeepSeekAnalyzer` for all article analysis. Returns structured JSON via function calling (`emit_trading_signal`). Low temperature (0.1) for consistency.
 - **`deepseek-reasoner`** — used exclusively by `TradingChatAdvisor` for the Telegram chat interface. Does chain-of-thought reasoning; does NOT support function calling, so it returns free-form text.
 
-The `settings.yaml` key `deepseek.reasoning_threshold: 0.8` documents the intent to upgrade individual articles to the reasoner when prefilter score > 0.8, but this escalation is not yet implemented in the task.
+The `settings.yaml` key `deepseek.reasoning_threshold: 0.8` upgrades individual articles to the reasoner when the prefilter's `|VADER|` score meets the threshold; both intraday tasks pass `model=model_reasoning` to `DeepSeekAnalyzer.analyze` for those hits (the reasoner path parses JSON from free-form text since R1 has no function calling). Set the threshold > 1 to disable.
 
 ### Signal Scoring
 
@@ -83,7 +83,13 @@ The `settings.yaml` key `deepseek.reasoning_threshold: 0.8` documents the intent
 
 Alert fires when `|score| >= 0.5` AND confidence >= "medium". Thresholds live in `config/settings.yaml` under `signals.thresholds` and are overridable per universe.
 
+Price confirmation is applied as a **multiplicative gate** on the news-driven conviction (contradicting price action dampens the score, confirming action amplifies it) rather than as a flat additive term — the market disagreeing is a partial veto.
+
 All magic numbers (clamps, scale factors, label bands) live in `trading_expert/constants.py`.
+
+### Learning Loop (weight calibration)
+
+Every scored signal persists its normalized factor breakdown in `Signal.factors` (JSON). `analysis/calibration.py` reads graded `signal_outcomes` and fits a numpy logistic regression predicting whether a signal's directional call was correct, reporting discrimination (AUC), calibration (Brier + reliability bins), and alpha decay (`return_1d` vs `return_7d`). Fitted factor importances are normalized into suggested weights and saved as a per-universe overlay at `data/learned_weights_<universe>.json` (config YAML stays the pristine default; the overlay is merged on top by both intraday tasks via `merge_weights`). Run manually with `trading-agent calibrate [--apply]`; the `recalibrate-weights` Celery beat task refits weekly and auto-applies when AUC > 0.5.
 
 ### Supply Chain Cascade
 

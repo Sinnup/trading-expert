@@ -7,6 +7,19 @@ loaded from the YAML config; the constants here are the in-code defaults/
 fallbacks plus the non-config structural values (clamps, scales, tier maps).
 """
 
+# ── Signal actions ───────────────────────────────────────────────────────────
+# Action labels emitted by DeepSeek analysis and cascade scoring.
+ACTION_BUY: str = "buy"
+ACTION_SELL: str = "sell"
+ACTION_HOLD: str = "hold"
+# Actions that open/close a paper position; "hold" never trades.
+TRADEABLE_ACTIONS: tuple[str, ...] = (ACTION_BUY, ACTION_SELL)
+
+# ── Signal type tags (per universe / origin) ─────────────────────────────────
+SIGNAL_TYPE_INTRADAY: str = "intraday"
+SIGNAL_TYPE_CASCADE: str = "cascade"
+SIGNAL_TYPE_INTRADAY_BMV: str = "intraday_bmv"
+
 # ── Signal scoring defaults (fallbacks when config omits them) ───────────────
 DEFAULT_WEIGHTS: dict[str, float] = {
     "deepseek_sentiment": 0.50,
@@ -65,6 +78,14 @@ PREFILTER_SENTIMENT_THRESHOLD: float = 0.6
 # ── Telegram notifier defaults ───────────────────────────────────────────────
 DEFAULT_ALERT_COOLDOWN_MINUTES: int = 30
 DEFAULT_MAX_ALERTS_PER_DAY: int = 20
+# Only push alerts during active trading hours (local time). Outside this
+# window alerts are suppressed so the phone stays quiet overnight.
+DEFAULT_ALERT_START_HOUR: int = 8
+DEFAULT_ALERT_END_HOUR: int = 18
+DEFAULT_ALERT_TIMEZONE: str = "America/Mexico_City"
+# Actions worth a push notification. Holds are dropped — the user only wants
+# to know what to buy or sell, not to sit on the sidelines.
+DEFAULT_ALERT_ACTIONS: tuple[str, ...] = ("buy", "sell")
 
 # ── Paper trading ─────────────────────────────────────────────────────────────
 # Fixed cash amount allocated per paper trade (buy or sell), expressed in each

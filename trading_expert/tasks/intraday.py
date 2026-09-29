@@ -32,19 +32,21 @@ from trading_expert.analysis.prefilter import Prefilter
 from trading_expert.analysis.deepseek import DeepSeekAnalyzer, ArticleContext
 from trading_expert.analysis.cascade import SupplyChainGraph
 from trading_expert.analysis.signals import SignalScorer, compute_price_confirmation
+from trading_expert.analysis.calibration import load_learned_weights, merge_weights
 from trading_expert.analysis.news_volume import (
     compute_batch_volume_zscores,
     count_articles_per_ticker,
 )
 from trading_expert.notifications.telegram import TelegramNotifier
-from trading_expert.portfolio.tracker import PaperPortfolio
+from trading_expert.portfolio.tracker import PaperPortfolio, eligible_for_paper_trade
 from trading_expert.constants import (
-    DEFAULT_ALERT_COOLDOWN_MINUTES,
-    DEFAULT_MAX_ALERTS_PER_DAY,
+    ACTION_BUY,
     DEFAULT_SOURCE_CREDIBILITY,
     FETCH_LOOKBACK_HOURS,
     PAPER_TRADE_SIZE,
     PREFILTER_SENTIMENT_THRESHOLD,
+    SIGNAL_TYPE_CASCADE,
+    SIGNAL_TYPE_INTRADAY,
     SOURCE_TIER_CREDIBILITY,
 )
 
@@ -183,6 +185,13 @@ async def _intraday_fetch_async():
 
         analyzer = DeepSeekAnalyzer(api_key=deepseek_key)
 
+        # Reasoner escalation: send the highest-conviction prefilter hits to the
+        # reasoner (R1) instead of the chat model. reasoning_threshold documents
+        # the |VADER| cutoff; leave it >1 to disable.
+        deepseek_cfg = settings.get("deepseek", {})
+        reasoner_model = deepseek_cfg.get("model_reasoning", "deepseek-reasoner")
+        reasoning_threshold = deepseek_cfg.get("reasoning_threshold", 1.1)
+
         # Build supply chain context
         from trading_expert.analysis.cascade import Company
         companies_list = [
@@ -207,15 +216,14 @@ async def _intraday_fetch_async():
         prices = await price_fetcher.get_batch(all_tickers)
 
         # ── Step 6: Analyze each escalated article ────────────────────
-        signal_scorer = SignalScorer(settings.get("signals", {}))
-        notifier = TelegramNotifier(
-            alert_cooldown_minutes=settings.get("telegram", {}).get(
-                "alert_cooldown_minutes", DEFAULT_ALERT_COOLDOWN_MINUTES
-            ),
-            max_alerts_per_day=settings.get("telegram", {}).get(
-                "max_alerts_per_day", DEFAULT_MAX_ALERTS_PER_DAY
-            ),
+        # Apply the learned-weights overlay (from `trading-agent calibrate
+        # --apply`) on top of the YAML defaults, if one exists.
+        signals_cfg = dict(settings.get("signals", {}))
+        signals_cfg["weights"] = merge_weights(
+            signals_cfg.get("weights", {}), load_learned_weights("semiconductor")
         )
+        signal_scorer = SignalScorer(signals_cfg)
+        notifier = TelegramNotifier.from_settings(settings.get("telegram", {}))
 
         signals_generated = 0
         pending_paper_trades: list[tuple[int, str, str, float]] = []
@@ -254,10 +262,13 @@ async def _intraday_fetch_async():
                 keyword_triggers=result.keyword_triggers,
             )
 
+            # Escalate high-conviction prefilter hits to the reasoner.
+            use_reasoner = abs(result.vader_score) >= reasoning_threshold
             deepseek_signal = await analyzer.analyze(
                 article=article_ctx,
                 supply_chain_context=sc_context,
                 price_context=price_context,
+                model=reasoner_model if use_reasoner else None,
             )
 
             # Compute source credibility from the article's source tier
@@ -295,8 +306,9 @@ async def _intraday_fetch_async():
                 cascade_parent=final_signal.cascade_parent,
                 source_article_ids=final_signal.source_article_ids,
                 urgency=final_signal.urgency,
-                signal_type="intraday",
+                signal_type=SIGNAL_TYPE_INTRADAY,
                 price_at_signal=final_signal.price_at_signal,
+                factors=final_signal.factors,
             )
             session.add(db_signal)
             session.flush()  # Assign db_signal.id before paper trade FK reference
@@ -315,7 +327,7 @@ async def _intraday_fetch_async():
 
             # Send alert if threshold crossed
             if final_signal.should_alert:
-                alert_sent = await notifier.send_alert(
+                await notifier.send_alert(
                     ticker=final_signal.ticker,
                     score=final_signal.score,
                     action=final_signal.action,
@@ -327,13 +339,15 @@ async def _intraday_fetch_async():
                     price=final_signal.price_at_signal,
                     alert_label=final_signal.alert_label,
                 )
-                # Only trade when the alert actually went out — the notifier's
-                # per-ticker cooldown and daily rate-limit prevent the same fresh
-                # news (re-escalated every cycle) from stacking duplicate trades.
-                if (
-                    alert_sent
-                    and final_signal.action in ("buy", "sell")
-                    and final_signal.price_at_signal
+                # Paper-trade on the signal *decision* (should_alert), not on
+                # whether the Telegram alert physically sent: a non-actionable
+                # hold for the same ticker often trips the notifier cooldown
+                # first and would suppress the actionable buy/sell alert.
+                # Duplicate stacking is prevented at the position level below.
+                if eligible_for_paper_trade(
+                    final_signal.action,
+                    final_signal.price_at_signal,
+                    final_signal.should_alert,
                 ):
                     pending_paper_trades.append((
                         db_signal.id,
@@ -349,20 +363,31 @@ async def _intraday_fetch_async():
                     parent_ticker=final_signal.ticker,
                     source_article_ids=final_signal.source_article_ids,
                 )
+                # Attach a live price so the cascade play can also be paper
+                # traded (it enters the same book as primary signals). Cascade
+                # tickers are tracked universe members, so a price is usually in
+                # the cycle's fetch; if not, the cascade still alerts but is
+                # skipped for trading (can't size without a price).
+                cascade_price = prices.get(cascade_signal.ticker)
+                cascade_price_at_signal = (
+                    cascade_price.close if cascade_price else None
+                )
                 db_cascade = Signal(
                     ticker=cascade_signal.ticker,
                     score=cascade_signal.score,
                     deepseek_sentiment=cascade_signal.deepseek_sentiment,
-                    deepseek_confidence="low",
+                    deepseek_confidence=cascade_signal.deepseek_confidence,
                     action=cascade_signal.action,
                     reasoning=cascade_signal.reasoning,
                     cascade_source=True,
                     cascade_parent=cascade_signal.cascade_parent,
                     source_article_ids=cascade_signal.source_article_ids,
                     urgency="medium",
-                    signal_type="cascade",
+                    signal_type=SIGNAL_TYPE_CASCADE,
+                    price_at_signal=cascade_price_at_signal,
                 )
                 session.add(db_cascade)
+                session.flush()  # Assign db_cascade.id before paper trade FK reference
                 signals_generated += 1
 
                 # Alert on strong cascade impacts too (secondary plays)
@@ -379,9 +404,22 @@ async def _intraday_fetch_async():
                         cascade_effects=[],
                         risk_factors=[],
                         suggested_timeframe=cascade_signal.suggested_timeframe,
-                        price=None,
+                        price=cascade_price_at_signal,
                         alert_label=cascade_signal.alert_label,
                     )
+
+                # Paper-trade eligible cascade plays too (same gate as primary)
+                if eligible_for_paper_trade(
+                    cascade_signal.action,
+                    cascade_price_at_signal,
+                    cascade_signal.should_alert,
+                ):
+                    pending_paper_trades.append((
+                        db_cascade.id,
+                        cascade_signal.ticker,
+                        cascade_signal.action,
+                        cascade_price_at_signal,
+                    ))
 
         session.commit()
 
@@ -393,7 +431,13 @@ async def _intraday_fetch_async():
                 if quantity < 1:
                     logger.info(f"PAPER TRADE skipped: {ticker} price ${price:.2f} exceeds trade size")
                     continue
-                if action == "buy":
+                if action == ACTION_BUY:
+                    # One open position per ticker: skip re-buying the same
+                    # re-escalated news every cycle (replaces the old alert
+                    # cooldown dedup). A later sell frees the ticker.
+                    if portfolio.has_open_position(ticker):
+                        logger.info(f"PAPER BUY skipped: already holding {ticker}")
+                        continue
                     portfolio.execute_buy(ticker, price, quantity, signal_id=sig_id)
                 else:
                     # execute_sell is long-only: it no-ops if we hold no position

@@ -24,6 +24,7 @@ class Signal(Base):
     urgency = Column(String)  # "high" "medium" "low"
     signal_type = Column(String, default="intraday")  # "intraday" or "daily_summary"
     price_at_signal = Column(Float)  # Stock price when signal was generated
+    factors = Column(JSON)  # {sentiment, news_volume, source_credibility, price_confirmation} — calibration features
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     is_active = Column(Boolean, default=True)  # False if superseded
 

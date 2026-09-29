@@ -16,7 +16,10 @@ from datetime import datetime
 from typing import Optional
 
 from trading_expert.constants import (
+    ACTION_BUY,
+    ACTION_HOLD,
     ACTION_HOLD_THRESHOLD,
+    ACTION_SELL,
     CASCADE_ACTION_THRESHOLD,
     CASCADE_SENTIMENT_MAGNITUDE,
     CONFIDENCE_ORDER,
@@ -89,6 +92,9 @@ class FinalSignal:
     should_alert: bool = False
     alert_label: str = ""
     alert_message: str = ""
+    # Per-factor breakdown (the normalized inputs that produced ``score``).
+    # Persisted on the Signal so the calibration loop has training features.
+    factors: dict[str, float] = field(default_factory=dict)
 
 
 class SignalScorer:
@@ -158,19 +164,40 @@ class SignalScorer:
         credibility_weight = self.weights.get(
             "source_credibility", DEFAULT_WEIGHTS["source_credibility"]
         )
+        volume_weight = self.weights.get("news_volume", DEFAULT_WEIGHTS["news_volume"])
+        price_weight = self.weights.get(
+            "price_confirmation", DEFAULT_WEIGHTS["price_confirmation"]
+        )
 
-        # Combined score: credibility amplifies sentiment magnitude
-        score = (
+        # Conviction from the news itself: DeepSeek sentiment amplified by source
+        # credibility, plus the "surprise" term (how unusual is this ticker's
+        # coverage right now).
+        base = (
             self.weights.get("deepseek_sentiment", DEFAULT_WEIGHTS["deepseek_sentiment"])
             * deepseek.sentiment
             * (1.0 + credibility_weight * credibility_boost)
-            + self.weights.get("news_volume", DEFAULT_WEIGHTS["news_volume"]) * news_vol
-            + self.weights.get("price_confirmation", DEFAULT_WEIGHTS["price_confirmation"])
-            * price_conf
+            + volume_weight * news_vol
         )
+
+        # Price action gates that conviction instead of nudging it: a move that
+        # confirms the thesis amplifies the score, a contradicting move dampens
+        # it. ``price_weight`` sets how hard the gate bites — full contradiction
+        # scales the score by (1 - price_weight), full confirmation by
+        # (1 + price_weight). The market disagreeing is a veto signal, not a
+        # small vote against.
+        gate = 1.0 + price_weight * price_conf
+        score = base * gate
 
         # Clamp to the configured score range
         score = max(SCORE_MIN, min(SCORE_MAX, score))
+
+        # Record the normalized factor inputs for the calibration loop.
+        factors = {
+            "deepseek_sentiment": deepseek.sentiment,
+            "news_volume": news_vol,
+            "source_credibility": credibility_boost,
+            "price_confirmation": price_conf,
+        }
 
         # Determine if alert should fire: above threshold AND confident enough
         should_alert = abs(score) >= self.alert_threshold
@@ -205,6 +232,7 @@ class SignalScorer:
             should_alert=should_alert,
             alert_label=alert_label,
             alert_message=alert_message,
+            factors=factors,
         )
 
     def score_cascade(
@@ -223,9 +251,9 @@ class SignalScorer:
 
         score = sentiment  # Cascade signals get pure sentiment score
 
-        action = "buy" if direction == "bullish" else "sell"
+        action = ACTION_BUY if direction == "bullish" else ACTION_SELL
         if abs(score) < CASCADE_ACTION_THRESHOLD:
-            action = "hold"
+            action = ACTION_HOLD
 
         return FinalSignal(
             ticker=cascade_effect.get("ticker", "UNKNOWN"),
@@ -259,10 +287,10 @@ class SignalScorer:
     def _resolve_action(deepseek_action: str, score: float) -> str:
         """Resolve the final action, possibly overriding DeepSeek."""
         if abs(score) < ACTION_HOLD_THRESHOLD:
-            return "hold"
-        if deepseek_action in ("buy", "sell", "hold"):
+            return ACTION_HOLD
+        if deepseek_action in (ACTION_BUY, ACTION_SELL, ACTION_HOLD):
             return deepseek_action
-        return "hold"
+        return ACTION_HOLD
 
     @staticmethod
     def _build_alert_message(

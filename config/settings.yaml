@@ -21,7 +21,7 @@ deepseek:
   model_reasoning: "deepseek-reasoner"
   max_tokens: 2048
   temperature: 0.1                # Low temp for consistent structured output
-  reasoning_threshold: 0.8        # Use reasoner model when prefilter score > 0.8
+  reasoning_threshold: 0.8        # Escalate to the reasoner when |VADER| >= this. Set >1 to disable.
   rate_limit_rpm: 30              # Requests per minute (free tier)
 
 # --- Signal Scoring ---
@@ -67,3 +67,7 @@ telegram:
   alert_cooldown_minutes: 30      # Don't send same ticker alert twice in 30 min
   daily_summary_time: "16:30"     # Send daily report 30 min after close
   max_alerts_per_day: 20          # Cap to avoid spam
+  alert_start_hour: 8             # Only push alerts from 08:00 (local tz)…
+  alert_end_hour: 18              # …until 18:00 — silent overnight
+  alert_timezone: "America/Mexico_City"
+  alert_actions: ["buy", "sell"]  # Straight-to-the-point: skip holds
