@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Answer first, code later.** When the user asks a question, answer it directly — do NOT start implementing. Wait for explicit confirmation before making any code changes.
 
+## Mandatory Change Workflow
+
+Once a change IS confirmed, it MUST follow the full workflow in **[`.claude/agents/versioning-agent.md`](.claude/agents/versioning-agent.md)** — every time, without being reminded. In short: update tests → `uv run pytest` green → atomic conventional commit **straight to `main`** (large/risky features go on a `feat/*` branch via PR instead) → update `FEATURE_MANAGER.md`/version if behavior changed → **deploy** with `docker compose up -d --build` and verify healthy. The commit → main → deploy flow is pre-authorized for this repo. Do not consider a change done until all steps complete.
+
 ## Commands
 
 ```bash
