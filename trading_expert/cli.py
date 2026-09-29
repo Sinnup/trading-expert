@@ -80,7 +80,7 @@ def _load_universe_config(universe: str):
 
 
 @click.group()
-@click.version_option(version="0.2.0", prog_name="trading-expert")
+@click.version_option(version="0.3.0", prog_name="trading-expert")
 def cli():
     """Trading Expert — AI-powered trading advisor for semiconductor and BMV stocks.
 
@@ -245,6 +245,101 @@ def backtest(days: int, universe: str):
             f"📐 Backtesting {UNIVERSE_CONFIG[universe]['label']} "
             f"from last {days} days..."
         )
+
+
+def _print_calibration_report(report) -> None:
+    """Pretty-print a CalibrationReport to the terminal."""
+    click.echo(f"\n📐 Calibration — {report.universe} ({report.n_samples} graded signals)")
+
+    if report.decay_ratio is not None:
+        pct = report.decay_ratio * 100
+        click.echo(
+            f"   ⏱️  Alpha decay: ~{pct:.0f}% of the 7-day move already showed up "
+            f"by day 1 (n={report.decay_n})."
+        )
+        if report.decay_ratio >= 0.8:
+            click.echo("       ⚠️  Most of the move happens before the signal — "
+                       "latency, not weighting, is the bottleneck.")
+
+    if not report.fitted:
+        click.echo(f"   ℹ️  {report.message}")
+        return
+
+    click.echo(
+        f"   🎯 Directional hit rate (base): {report.base_rate:.1%}  |  "
+        f"discrimination AUC: {report.auc:.3f}  |  Brier: {report.brier:.3f}"
+    )
+    verdict = (
+        "no better than chance" if report.auc < 0.55
+        else "a real edge" if report.auc >= 0.60
+        else "a weak edge"
+    )
+    click.echo(f"       → AUC {report.auc:.3f} means the model has {verdict}.")
+
+    if report.reliability:
+        click.echo("   📊 Reliability (predicted → actual hit rate):")
+        for b in report.reliability:
+            click.echo(
+                f"       {b['range']}: predicted {b['predicted']:.0%}, "
+                f"actual {b['actual']:.0%} (n={b['n']})"
+            )
+
+    click.echo("   ⚖️  Factor importance → suggested weights (current):")
+    for k in report.suggested_weights:
+        coef = report.coefficients.get(k, 0.0)
+        cur = report.current_weights.get(k, 0.0)
+        click.echo(
+            f"       {k:20s} {report.suggested_weights[k]:.3f}  ({cur:.3f})   "
+            f"[coef {coef:+.3f}]"
+        )
+
+
+@cli.command()
+@click.option("--days", "-d", default=90, help="(unused) reserved for windowing")
+@click.option(
+    "--universe", "-u",
+    default=None,
+    type=click.Choice(UNIVERSE_CHOICES),
+    help="Market universe to calibrate",
+)
+@click.option("--min-samples", default=30, help="Minimum graded signals required to fit")
+@click.option("--apply", "apply_weights", is_flag=True, help="Save fitted weights as the learned-weights overlay")
+def calibrate(days: int, universe: str, min_samples: int, apply_weights: bool):
+    """Fit signal-scorer weights from realized outcomes (the learning loop).
+
+    Reads graded signal_outcomes, measures whether the model actually predicts
+    price direction, and derives factor weights from the data. Use --apply to
+    save them as an overlay the pipeline picks up on the next cycle.
+    """
+    from trading_expert.models import init_db, get_session
+    from trading_expert.analysis.calibration import calibrate as run_calibration, save_learned_weights
+
+    init_db()
+    session = get_session()
+    universes = ["semiconductor", "bmv"] if universe == "all" else [universe or "semiconductor"]
+
+    try:
+        for uni in universes:
+            report = run_calibration(session, uni, min_samples=min_samples)
+            _print_calibration_report(report)
+
+            if apply_weights:
+                if report.fitted:
+                    path = save_learned_weights(
+                        uni,
+                        report.suggested_weights,
+                        meta={
+                            "n_samples": report.n_samples,
+                            "auc": report.auc,
+                            "base_rate": report.base_rate,
+                        },
+                    )
+                    click.echo(f"   ✅ Saved learned weights → {path}")
+                    click.echo("      The next intraday cycle will use them.")
+                else:
+                    click.echo("   ⏭️  Not enough signal to fit — nothing applied.", err=True)
+    finally:
+        session.close()
 
 
 @cli.command()

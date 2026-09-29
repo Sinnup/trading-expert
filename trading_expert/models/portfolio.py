@@ -14,9 +14,11 @@ class SignalOutcome(Base):
     ticker = Column(String, nullable=False, index=True)
     signal_score = Column(Float, nullable=False)
     price_at_signal = Column(Float, nullable=False)
-    price_7d = Column(Float, nullable=True)  # NULL until time passes
+    price_1d = Column(Float, nullable=True)  # NULL until time passes
+    price_7d = Column(Float, nullable=True)
     price_30d = Column(Float, nullable=True)
     price_90d = Column(Float, nullable=True)
+    return_1d_pct = Column(Float, nullable=True)  # early move — used to measure alpha decay
     return_7d_pct = Column(Float, nullable=True)
     return_30d_pct = Column(Float, nullable=True)
     return_90d_pct = Column(Float, nullable=True)

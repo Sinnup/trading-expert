@@ -96,6 +96,32 @@ def format_alert(
     return "\n".join(lines)
 
 
+def format_alert_concise(
+    ticker: str,
+    action: str,
+    price: Optional[float] = None,
+    alert_label: str = "",
+    suggested_timeframe: str = "",
+) -> str:
+    """Format a signal as a short, straight-to-the-point action alert.
+
+    No analysis, cascade, or risk sections — just what to buy/sell and at
+    what price. Designed for at-a-glance reading during trading hours.
+
+    Example:
+        🟢 BUY NVDA @ $123.45  (1-2 weeks)
+    """
+    emoji = {"buy": "🟢", "sell": "🔴"}.get(action.lower(), "⚪")
+    verb = action.upper()
+
+    headline = f"{emoji} {verb} {ticker}"
+    if price:
+        headline += f" @ ${price:,.2f}"
+    if suggested_timeframe:
+        headline += f"  ({suggested_timeframe})"
+    return headline
+
+
 def format_daily_summary(
     signals: list[dict],
     date: Optional[str] = None,

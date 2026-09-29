@@ -114,3 +114,7 @@ telegram:
   alert_cooldown_minutes: 30
   daily_summary_time: "15:15"     # 15 min after BMV close (Mexico City)
   max_alerts_per_day: 20
+  alert_start_hour: 8             # Only push alerts from 08:00 (local tz)…
+  alert_end_hour: 18              # …until 18:00 — silent overnight
+  alert_timezone: "America/Mexico_City"
+  alert_actions: ["buy", "sell"]  # Straight-to-the-point: skip holds

@@ -30,6 +30,7 @@ from trading_expert.fetchers.prices import PriceFetcher
 from trading_expert.analysis.prefilter import Prefilter
 from trading_expert.analysis.deepseek import DeepSeekAnalyzer, ArticleContext
 from trading_expert.analysis.signals import SignalScorer, compute_price_confirmation
+from trading_expert.analysis.calibration import load_learned_weights, merge_weights
 from trading_expert.analysis.news_volume import (
     compute_batch_volume_zscores,
     count_articles_per_ticker,
@@ -38,8 +39,6 @@ from trading_expert.notifications.telegram import TelegramNotifier
 from trading_expert.portfolio.tracker import PaperPortfolio, eligible_for_paper_trade
 from trading_expert.constants import (
     ACTION_BUY,
-    DEFAULT_ALERT_COOLDOWN_MINUTES,
-    DEFAULT_MAX_ALERTS_PER_DAY,
     DEFAULT_SOURCE_CREDIBILITY,
     FETCH_LOOKBACK_HOURS,
     PAPER_TRADE_SIZE,
@@ -184,20 +183,23 @@ async def _intraday_fetch_bmv_async():
 
         analyzer = DeepSeekAnalyzer(api_key=deepseek_key)
 
+        # Reasoner escalation config (see intraday.py for rationale).
+        deepseek_cfg = settings.get("deepseek", {})
+        reasoner_model = deepseek_cfg.get("model_reasoning", "deepseek-reasoner")
+        reasoning_threshold = deepseek_cfg.get("reasoning_threshold", 1.1)
+
         # ── Step 5: Get prices ────────────────────────────────────────
         price_fetcher = PriceFetcher()
         prices = await price_fetcher.get_batch(all_tickers)
 
         # ── Step 6: Analyze each escalated article ────────────────────
-        signal_scorer = SignalScorer(settings.get("signals", {}))
-        notifier = TelegramNotifier(
-            alert_cooldown_minutes=settings.get("telegram", {}).get(
-                "alert_cooldown_minutes", DEFAULT_ALERT_COOLDOWN_MINUTES
-            ),
-            max_alerts_per_day=settings.get("telegram", {}).get(
-                "max_alerts_per_day", DEFAULT_MAX_ALERTS_PER_DAY
-            ),
+        # Apply the learned-weights overlay on top of the YAML defaults.
+        signals_cfg = dict(settings.get("signals", {}))
+        signals_cfg["weights"] = merge_weights(
+            signals_cfg.get("weights", {}), load_learned_weights("bmv")
         )
+        signal_scorer = SignalScorer(signals_cfg)
+        notifier = TelegramNotifier.from_settings(settings.get("telegram", {}))
 
         signals_generated = 0
         pending_paper_trades: list[tuple[int, str, str, float]] = []
@@ -236,10 +238,13 @@ async def _intraday_fetch_bmv_async():
                 keyword_triggers=result.keyword_triggers,
             )
 
+            # Escalate high-conviction prefilter hits to the reasoner.
+            use_reasoner = abs(result.vader_score) >= reasoning_threshold
             deepseek_signal = await analyzer.analyze(
                 article=article_ctx,
                 supply_chain_context="",  # No cascade for BMV
                 price_context=price_context,
+                model=reasoner_model if use_reasoner else None,
             )
 
             # Compute source credibility from the article's source tier
@@ -279,6 +284,7 @@ async def _intraday_fetch_bmv_async():
                 urgency=final_signal.urgency,
                 signal_type=SIGNAL_TYPE_INTRADAY_BMV,  # Distinguish from semiconductor signals
                 price_at_signal=final_signal.price_at_signal,
+                factors=final_signal.factors,
             )
             session.add(db_signal)
             session.flush()  # Assign db_signal.id before paper trade FK reference
