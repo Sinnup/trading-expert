@@ -17,7 +17,7 @@ Every requested change — however small — completes ALL of these steps before
 
 5. **Commit straight to `main`** using [Conventional Commits](https://www.conventionalcommits.org/) (`feat`/`fix`/`refactor`/`test`/`docs`/`chore`/`perf`). End the message with:
    ```
-   Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+   Co-Authored-By: Claude <noreply@anthropic.com>
    ```
    Update `FEATURE_MANAGER.md` (and bump the version in `pyproject.toml` + `cli.py`) when behavior changes.
 
