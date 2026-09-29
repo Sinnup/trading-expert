@@ -21,6 +21,41 @@ logger = logging.getLogger(__name__)
 DEFAULT_CAPITAL = 100_000.0  # $100k paper money
 
 
+def compute_position_size(
+    *,
+    equity: float,
+    cash: float,
+    price: float,
+    score: float,
+    alert_threshold: float,
+    target_invested_fraction: float,
+    max_positions: int,
+    conviction_cap: float,
+    max_position_fraction: float,
+) -> int:
+    """Conviction-weighted position size, in whole shares.
+
+    Divides the target-invested slice of equity into ``max_positions`` slots,
+    then scales the slot by conviction (how far ``|score|`` exceeds the alert
+    threshold). The result is capped by a per-name exposure limit and by
+    available cash, so the book stays deployed without over-concentrating.
+
+    Returns 0 when the inputs can't support at least one share.
+    """
+    if price <= 0 or equity <= 0 or cash <= 0 or max_positions <= 0:
+        return 0
+
+    base_dollars = target_invested_fraction * equity / max_positions
+    if alert_threshold > 0:
+        conviction = min(max(abs(score) / alert_threshold, 1.0), conviction_cap)
+    else:
+        conviction = 1.0
+
+    target_dollars = base_dollars * conviction
+    target_dollars = min(target_dollars, max_position_fraction * equity, cash)
+    return int(target_dollars / price)
+
+
 def eligible_for_paper_trade(
     action: str,
     price: Optional[float],
@@ -202,8 +237,14 @@ class PaperPortfolio:
         finally:
             session.close()
 
-    def get_summary(self) -> dict:
+    def get_summary(self, price_map: Optional[dict[str, float]] = None) -> dict:
         """Get current portfolio summary.
+
+        Args:
+            price_map: ``{ticker: current_price}`` used to mark open positions
+                to market. Without it, holdings fall back to their buy price
+                (so unrealized P&L reads ~0) — pass live prices for a true
+                equity figure.
 
         Returns:
             Dict with total_value, cash, holdings, pnl_total, pnl_pct.
@@ -236,8 +277,8 @@ class PaperPortfolio:
             # Cash
             cash = self.initial_capital - total_buy_cost + total_sell_proceeds
 
-            # Holdings
-            holdings = self._get_all_positions()
+            # Holdings (marked to market when a price_map is supplied)
+            holdings = self._get_all_positions(price_map=price_map)
 
             # Total value (cash + current holdings value)
             holdings_value = sum(
@@ -269,10 +310,10 @@ class PaperPortfolio:
         finally:
             session.close()
 
-    def take_snapshot(self) -> PortfolioSnapshot:
-        """Save a daily portfolio snapshot."""
+    def take_snapshot(self, price_map: Optional[dict[str, float]] = None) -> PortfolioSnapshot:
+        """Save a daily portfolio snapshot (marked to market if prices given)."""
         session = get_session()
-        summary = self.get_summary()
+        summary = self.get_summary(price_map=price_map)
 
         try:
             snapshot = PortfolioSnapshot(
@@ -304,17 +345,27 @@ class PaperPortfolio:
         """
         return self._get_position(ticker)["quantity"] > 0
 
-    def _get_position(self, ticker: str) -> dict:
+    def open_quantity(self, ticker: str) -> int:
+        """Whole shares currently held long for ``ticker`` (0 if flat)."""
+        return int(self._get_position(ticker)["quantity"])
+
+    def _get_position(self, ticker: str, price_map: Optional[dict[str, float]] = None) -> dict:
         """Get current position for a ticker."""
-        return self._get_all_positions().get(ticker, {
+        return self._get_all_positions(price_map=price_map).get(ticker, {
             "quantity": 0,
             "avg_price": 0,
             "current_price": 0,
             "unrealized_pnl": 0,
         })
 
-    def _get_all_positions(self) -> dict:
-        """Get all current positions with unrealized P&L."""
+    def _get_all_positions(self, price_map: Optional[dict[str, float]] = None) -> dict:
+        """Get all current positions with unrealized P&L.
+
+        Args:
+            price_map: ``{ticker: current_price}`` to mark positions to market.
+                Missing tickers fall back to their average buy price.
+        """
+        price_map = price_map or {}
         session = get_session()
 
         try:
@@ -342,14 +393,14 @@ class PaperPortfolio:
                 pos["quantity"] += buy.quantity
                 pos["total_cost"] += buy.price * buy.quantity
                 pos["avg_price"] = pos["total_cost"] / pos["quantity"] if pos["quantity"] > 0 else 0
-                # Note: current_price should be updated from external price data
+
+            # Mark to market and compute unrealized P&L off the live price.
+            for ticker, pos in positions.items():
+                pos["current_price"] = price_map.get(ticker, pos["avg_price"])
                 pos["unrealized_pnl"] = (
                     (pos["current_price"] - pos["avg_price"]) * pos["quantity"]
                 )
-
-            # Clean up dict
-            for ticker in positions:
-                del positions[ticker]["total_cost"]
+                del pos["total_cost"]
 
             return positions
 

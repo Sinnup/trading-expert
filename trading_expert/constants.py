@@ -88,7 +88,21 @@ DEFAULT_ALERT_TIMEZONE: str = "America/Mexico_City"
 DEFAULT_ALERT_ACTIONS: tuple[str, ...] = ("buy", "sell")
 
 # ── Paper trading ─────────────────────────────────────────────────────────────
-# Fixed cash amount allocated per paper trade (buy or sell), expressed in each
-# universe's own quote currency (USD for semiconductor, MXN for BMV). If the
-# stock price exceeds this value, the trade is skipped.
+# Position sizing. The old model bought a flat PAPER_TRADE_SIZE per trade, which
+# left most of the book in cash (max deployment = universe_size × clip). Instead
+# we size each entry as a conviction-weighted slice of live equity:
+#
+#     base    = target_invested_fraction × equity / max_concurrent_positions
+#     size$   = base × conviction, capped at max_position_fraction × equity and cash
+#     conviction = clamp(|score| / alert_threshold, 1.0, conviction_cap)
+#
+# so capital actually gets deployed and the strongest (calibrated) signals get
+# the largest positions. Overridable per universe via the `portfolio:` config.
+DEFAULT_TARGET_INVESTED_FRACTION: float = 0.95   # aim to keep only ~5% idle cash
+DEFAULT_MAX_CONCURRENT_POSITIONS: int = 20       # slots the book is divided into
+DEFAULT_CONVICTION_CAP: float = 2.0              # strongest signal ≤ 2× the base slot
+DEFAULT_MAX_POSITION_FRACTION: float = 0.15      # never more than 15% of equity in one name
+
+# Legacy flat clip — retained only as a fallback floor reference; no longer the
+# primary sizing path.
 PAPER_TRADE_SIZE: float = 1000.0

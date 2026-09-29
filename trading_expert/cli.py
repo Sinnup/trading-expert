@@ -80,7 +80,7 @@ def _load_universe_config(universe: str):
 
 
 @click.group()
-@click.version_option(version="0.3.0", prog_name="trading-expert")
+@click.version_option(version="0.4.0", prog_name="trading-expert")
 def cli():
     """Trading Expert — AI-powered trading advisor for semiconductor and BMV stocks.
 

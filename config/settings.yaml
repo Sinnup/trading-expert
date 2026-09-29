@@ -38,6 +38,13 @@ signals:
     watch_list: 0.4               # |score| >= 0.4 → include in daily summary
     min_confidence: "medium"      # Only alert if DeepSeek confidence >= medium
 
+# --- Paper Trading (position sizing) ---
+portfolio:
+  target_invested_fraction: 0.95   # deploy ~95% of equity, keep ~5% cash buffer
+  max_concurrent_positions: 20     # equity is split into this many base slots
+  conviction_cap: 2.0              # strongest signal takes up to 2× the base slot
+  max_position_fraction: 0.15      # hard cap: no single name over 15% of equity
+
 # --- News Sources ---
 news_sources:
   tier1:                          # Highest credibility

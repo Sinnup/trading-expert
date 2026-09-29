@@ -16,6 +16,7 @@ from trading_expert.models import init_db, get_session
 from trading_expert.models.portfolio import PaperTrade
 from trading_expert.portfolio.tracker import (
     PaperPortfolio,
+    compute_position_size,
     eligible_for_paper_trade,
 )
 
@@ -149,3 +150,101 @@ class TestHasOpenPosition:
         portfolio.execute_buy("NVDA", price=100.0, quantity=10)
         portfolio.execute_sell("NVDA", price=110.0, quantity=4)
         assert portfolio.has_open_position("NVDA") is True
+
+
+# ── Conviction-weighted position sizing ──────────────────────────────────────
+
+_SIZING = dict(
+    target_invested_fraction=0.95,
+    max_positions=20,
+    conviction_cap=2.0,
+    max_position_fraction=0.15,
+)
+
+
+class TestPositionSizing:
+    def test_base_slot_size(self):
+        # At exactly the alert threshold, conviction=1.0 → one base slot.
+        # base = 0.95 * 100_000 / 20 = 4_750 → 47 shares @ $100.
+        qty = compute_position_size(
+            equity=100_000, cash=100_000, price=100.0,
+            score=0.5, alert_threshold=0.5, **_SIZING,
+        )
+        assert qty == 47
+
+    def test_stronger_signal_gets_more(self):
+        weak = compute_position_size(
+            equity=100_000, cash=100_000, price=100.0,
+            score=0.5, alert_threshold=0.5, **_SIZING,
+        )
+        strong = compute_position_size(
+            equity=100_000, cash=100_000, price=100.0,
+            score=1.0, alert_threshold=0.5, **_SIZING,
+        )
+        assert strong > weak
+
+    def test_conviction_is_capped(self):
+        # score/threshold = 4× but cap is 2× → same as a 2× signal.
+        capped = compute_position_size(
+            equity=100_000, cash=100_000, price=100.0,
+            score=2.0, alert_threshold=0.5, **_SIZING,
+        )
+        at_cap = compute_position_size(
+            equity=100_000, cash=100_000, price=100.0,
+            score=1.0, alert_threshold=0.5, **_SIZING,
+        )
+        assert capped == at_cap
+        # 2× base = 9_500, under the 15_000 per-name cap → 95 shares.
+        assert capped == 95
+
+    def test_per_name_cap_binds(self):
+        # Huge conviction cap would blow past 15% of equity; cap holds.
+        qty = compute_position_size(
+            equity=100_000, cash=100_000, price=100.0,
+            score=5.0, alert_threshold=0.5,
+            target_invested_fraction=0.95, max_positions=2,
+            conviction_cap=10.0, max_position_fraction=0.15,
+        )
+        assert qty == int(0.15 * 100_000 / 100.0)  # 150 shares
+
+    def test_capped_by_available_cash(self):
+        qty = compute_position_size(
+            equity=100_000, cash=500.0, price=100.0,
+            score=1.0, alert_threshold=0.5, **_SIZING,
+        )
+        assert qty == 5  # only $500 cash → 5 shares
+
+    def test_zero_when_price_exceeds_budget(self):
+        qty = compute_position_size(
+            equity=100_000, cash=100.0, price=200.0,
+            score=1.0, alert_threshold=0.5, **_SIZING,
+        )
+        assert qty == 0
+
+    def test_no_cash_no_shares(self):
+        assert compute_position_size(
+            equity=100_000, cash=0.0, price=100.0,
+            score=1.0, alert_threshold=0.5, **_SIZING,
+        ) == 0
+
+
+class TestMarkToMarket:
+    def test_unrealized_pnl_uses_live_price(self, paper_db):
+        portfolio = PaperPortfolio()
+        portfolio.execute_buy("NVDA", price=100.0, quantity=10)
+
+        # No price_map → falls back to cost basis, so unrealized ~0.
+        flat = portfolio.get_summary()
+        assert flat["holdings"]["NVDA"]["unrealized_pnl"] == pytest.approx(0.0)
+        assert flat["total_value"] == pytest.approx(100_000.0)
+
+        # With a live mark above cost, equity and unrealized P&L rise.
+        marked = portfolio.get_summary(price_map={"NVDA": 120.0})
+        assert marked["holdings"]["NVDA"]["unrealized_pnl"] == pytest.approx(200.0)
+        assert marked["total_value"] == pytest.approx(100_200.0)
+
+    def test_open_quantity(self, paper_db):
+        portfolio = PaperPortfolio()
+        assert portfolio.open_quantity("NVDA") == 0
+        portfolio.execute_buy("NVDA", price=100.0, quantity=10)
+        assert portfolio.open_quantity("NVDA") == 10

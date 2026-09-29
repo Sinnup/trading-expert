@@ -44,6 +44,15 @@ signals:
     watch_list: 0.4
     min_confidence: "medium"
 
+# --- Paper Trading (position sizing) ---
+# Fewer slots than semiconductor: this universe is only ~6 tickers, so dividing
+# equity into 20 would leave most of the book permanently in cash.
+portfolio:
+  target_invested_fraction: 0.95
+  max_concurrent_positions: 6
+  conviction_cap: 2.0
+  max_position_fraction: 0.25     # concentrated by necessity in a small universe
+
 # --- News Sources (Spanish / Mexican) ---
 news_sources:
   tier1:                          # Highest credibility — Mexican financial

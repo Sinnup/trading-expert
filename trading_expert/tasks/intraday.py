@@ -38,12 +38,20 @@ from trading_expert.analysis.news_volume import (
     count_articles_per_ticker,
 )
 from trading_expert.notifications.telegram import TelegramNotifier
-from trading_expert.portfolio.tracker import PaperPortfolio, eligible_for_paper_trade
+from trading_expert.portfolio.tracker import (
+    PaperPortfolio,
+    compute_position_size,
+    eligible_for_paper_trade,
+)
 from trading_expert.constants import (
     ACTION_BUY,
+    DEFAULT_CONVICTION_CAP,
+    DEFAULT_MAX_CONCURRENT_POSITIONS,
+    DEFAULT_MAX_POSITION_FRACTION,
     DEFAULT_SOURCE_CREDIBILITY,
+    DEFAULT_STRONG_ALERT_THRESHOLD,
+    DEFAULT_TARGET_INVESTED_FRACTION,
     FETCH_LOOKBACK_HOURS,
-    PAPER_TRADE_SIZE,
     PREFILTER_SENTIMENT_THRESHOLD,
     SIGNAL_TYPE_CASCADE,
     SIGNAL_TYPE_INTRADAY,
@@ -226,7 +234,8 @@ async def _intraday_fetch_async():
         notifier = TelegramNotifier.from_settings(settings.get("telegram", {}))
 
         signals_generated = 0
-        pending_paper_trades: list[tuple[int, str, str, float]] = []
+        # (signal_id, ticker, action, price, score)
+        pending_paper_trades: list[tuple[int, str, str, float, float]] = []
         for result in escalated:
             article = next(
                 (a for a in all_articles if a.article_id == result.article_id),
@@ -354,6 +363,7 @@ async def _intraday_fetch_async():
                         final_signal.ticker,
                         final_signal.action,
                         final_signal.price_at_signal,
+                        final_signal.score,
                     ))
 
             # Generate cascade signals
@@ -419,29 +429,61 @@ async def _intraday_fetch_async():
                         cascade_signal.ticker,
                         cascade_signal.action,
                         cascade_price_at_signal,
+                        cascade_signal.score,
                     ))
 
         session.commit()
 
-        # Execute paper trades for alert-triggering signals (signals committed above)
+        # Execute paper trades for alert-triggering signals (signals committed above).
         if pending_paper_trades:
             portfolio = PaperPortfolio()
-            for sig_id, ticker, action, price in pending_paper_trades:
-                quantity = int(PAPER_TRADE_SIZE / price)
-                if quantity < 1:
-                    logger.info(f"PAPER TRADE skipped: {ticker} price ${price:.2f} exceeds trade size")
-                    continue
+            # Mark open positions to market with this cycle's live prices, so
+            # sizing works off true equity rather than cost basis.
+            price_map = {t: p.close for t, p in prices.items() if p}
+            portfolio_cfg = settings.get("portfolio", {})
+            alert_threshold = signals_cfg.get("thresholds", {}).get(
+                "strong_alert", DEFAULT_STRONG_ALERT_THRESHOLD
+            )
+            for sig_id, ticker, action, price, score in pending_paper_trades:
                 if action == ACTION_BUY:
                     # One open position per ticker: skip re-buying the same
-                    # re-escalated news every cycle (replaces the old alert
-                    # cooldown dedup). A later sell frees the ticker.
+                    # re-escalated news every cycle. A later sell frees the ticker.
                     if portfolio.has_open_position(ticker):
                         logger.info(f"PAPER BUY skipped: already holding {ticker}")
                         continue
+                    summary = portfolio.get_summary(price_map=price_map)
+                    quantity = compute_position_size(
+                        equity=summary["total_value"],
+                        cash=summary["cash"],
+                        price=price,
+                        score=score,
+                        alert_threshold=alert_threshold,
+                        target_invested_fraction=portfolio_cfg.get(
+                            "target_invested_fraction", DEFAULT_TARGET_INVESTED_FRACTION
+                        ),
+                        max_positions=portfolio_cfg.get(
+                            "max_concurrent_positions", DEFAULT_MAX_CONCURRENT_POSITIONS
+                        ),
+                        conviction_cap=portfolio_cfg.get(
+                            "conviction_cap", DEFAULT_CONVICTION_CAP
+                        ),
+                        max_position_fraction=portfolio_cfg.get(
+                            "max_position_fraction", DEFAULT_MAX_POSITION_FRACTION
+                        ),
+                    )
+                    if quantity < 1:
+                        logger.info(
+                            f"PAPER BUY skipped: {ticker} @ ${price:.2f} — "
+                            f"sizing yields <1 share (low cash or price too high)"
+                        )
+                        continue
                     portfolio.execute_buy(ticker, price, quantity, signal_id=sig_id)
                 else:
-                    # execute_sell is long-only: it no-ops if we hold no position
-                    # (the paper portfolio does not short).
+                    # Sell signal → fully exit the open position (long-only; a
+                    # no-op if we hold nothing, since the book does not short).
+                    quantity = portfolio.open_quantity(ticker)
+                    if quantity < 1:
+                        continue
                     portfolio.execute_sell(ticker, price, quantity, signal_id=sig_id)
 
         logger.info(

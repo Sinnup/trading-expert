@@ -90,6 +90,28 @@
 
 ## Changelog
 
+### 0.4.0 — 2026-09-29
+
+**Capital deployment & profits** — kill the cash drag from flat $1k clips.
+
+**perf(portfolio)**: `compute_position_size` replaces the fixed `PAPER_TRADE_SIZE` clip with
+conviction-weighted sizing: `base = target_invested_fraction × equity / max_concurrent_positions`,
+scaled by `clamp(|score|/alert_threshold, 1, conviction_cap)`, capped by a per-name exposure limit
+and available cash. Deploys ~95% of equity (was structurally capped near 35%) and puts the largest
+positions behind the strongest calibrated signals.
+
+**fix(portfolio)**: Mark-to-market — `get_summary`/`take_snapshot`/`_get_all_positions` now accept a
+`price_map` and value open positions at live prices. Previously unrealized P&L was frozen at cost
+basis, so total equity always read ≈ starting capital. Sizing now works off true equity.
+
+**feat(portfolio)**: Sell signals fully exit the open position (`open_quantity`) instead of selling a
+fixed dollar slice; both intraday tasks pass the cycle's live prices for marking and sizing.
+
+**feat(config)**: New `portfolio:` block per universe (semiconductor: 20 slots / 15% cap; BMV: 6 slots
+/ 25% cap given the smaller universe).
+
+**test**: 103 tests passing (10 new covering sizing edge cases + mark-to-market).
+
 ### 0.3.0 — 2026-09-29
 
 **Accuracy & the Learning Loop** — the scorer now learns its weights from realized outcomes instead of using hand-picked guesses.
