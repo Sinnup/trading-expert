@@ -33,6 +33,7 @@ from .formatter import (
     format_portfolio_summary,
     format_help,
     format_error,
+    md_to_html,
 )
 
 logger = logging.getLogger(__name__)
@@ -235,7 +236,7 @@ class TelegramNotifier:
                     json={
                         "chat_id": self.chat_id,
                         "text": text,
-                        "parse_mode": "Markdown",
+                        "parse_mode": "HTML",
                         "disable_web_page_preview": True,
                     },
                 )
@@ -348,9 +349,10 @@ def start_command_bot(
             typing_task.cancel()
 
         # Split into chunks if R1 returns a very long response
-        for i in range(0, max(1, len(response)), 4000):
-            chunk = response[i : i + 4000]
-            await update.message.reply_text(chunk)
+        html_response = md_to_html(response)
+        for i in range(0, max(1, len(html_response)), 4000):
+            chunk = html_response[i : i + 4000]
+            await update.message.reply_text(chunk, parse_mode="HTML")
 
     # ── Command handlers ─────────────────────────────────────────────────────
 
@@ -384,7 +386,7 @@ def start_command_bot(
                 }
                 for s in signals
             ])
-            await update.message.reply_text(msg, parse_mode="Markdown")
+            await update.message.reply_text(msg, parse_mode="HTML")
         except Exception as e:
             await update.message.reply_text(format_error(str(e)))
 
@@ -424,7 +426,7 @@ def start_command_bot(
                 pnl_total=summary["pnl_total"],
                 pnl_pct=summary["pnl_pct"],
             )
-            await update.message.reply_text(msg, parse_mode="Markdown")
+            await update.message.reply_text(msg, parse_mode="HTML")
         except Exception as e:
             await update.message.reply_text(format_error(str(e)))
 
@@ -449,7 +451,7 @@ def start_command_bot(
 
     async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show help."""
-        await update.message.reply_text(format_help(), parse_mode="Markdown")
+        await update.message.reply_text(format_help(), parse_mode="HTML")
 
     async def cmd_ask(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Ask a trading question explicitly: /ask Is NVDA a good buy now?"""
