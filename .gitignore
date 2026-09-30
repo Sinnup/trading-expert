@@ -36,3 +36,6 @@ docker-compose.override.yml
 # Celery
 celerybeat-schedule
 celerybeat.pid
+
+# Portfolio assets (large binaries — GIF lives as a GitHub release asset)
+portfolio/

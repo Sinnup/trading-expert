@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Trading Expert — AI-powered trading signal system for semiconductor and tech stocks. DeepSeek sentiment analysis, supply chain cascade engine, and Telegram alerts.">
+  <title>Trading Expert — AI Trading Signal System</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%230e0e10'/><text x='50' y='68' font-family='system-ui,sans-serif' font-size='52' text-anchor='middle'>📈</text></svg>">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0e0e10;
+      --surface: #1a1a1e;
+      --surface-hover: #222226;
+      --border: #2a2a2e;
+      --accent: #f59e0b;
+      --accent-dim: rgba(245, 158, 11, 0.12);
+      --text: #ffffff;
+      --text-muted: #c8c8d0;
+      --text-dim: #9a9aa8;
+    }
+
+    html { scroll-behavior: smooth; font-size: 19px; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 1rem;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    /* ── Nav ─────────────────────────────────────────── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(14, 14, 16, 0.88);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+    }
+
+    .nav-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 60px;
+    }
+
+    .nav-name {
+      font-weight: 700;
+      font-size: 1rem;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .nav-name span { color: var(--accent); }
+
+    .nav-links {
+      display: flex;
+      gap: 1.5rem;
+      align-items: center;
+    }
+    .nav-links a {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--text); }
+
+    .icon-link {
+      display: flex;
+      align-items: center;
+      color: var(--text-muted);
+      transition: color 0.2s;
+    }
+    .icon-link:hover { color: var(--accent); }
+    .icon-link svg { width: 20px; height: 20px; fill: currentColor; }
+
+    /* ── Layout ──────────────────────────────────────── */
+    main { max-width: 1100px; margin: 0 auto; padding: 0 2rem; }
+    section { padding: 3rem 0; }
+
+    .section-label {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 0.85rem;
+    }
+
+    h2 {
+      font-size: clamp(1.75rem, 4vw, 2.5rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.15;
+      margin-bottom: 2rem;
+    }
+
+    /* ── Hero ────────────────────────────────────────── */
+    #hero {
+      padding: 4rem 0 3rem;
+      min-height: calc(100vh - 60px);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .hero-eyebrow {
+      font-size: 0.875rem;
+      color: var(--accent);
+      font-weight: 500;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .hero-eyebrow::before {
+      content: '';
+      display: inline-block;
+      width: 28px;
+      height: 2px;
+      background: var(--accent);
+      border-radius: 2px;
+    }
+
+    .hero-name {
+      font-size: clamp(2.8rem, 7vw, 5rem);
+      font-weight: 900;
+      letter-spacing: -0.05em;
+      line-height: 1.0;
+      margin-bottom: 1.75rem;
+    }
+    .hero-name .accent { color: var(--accent); }
+
+    .hero-pitch {
+      font-size: clamp(1rem, 2vw, 1.15rem);
+      color: var(--text-muted);
+      max-width: 620px;
+      margin-bottom: 2.25rem;
+      line-height: 1.75;
+    }
+
+    .hero-ctas {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.7rem 1.4rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      transition: all 0.2s;
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+    }
+    .btn-primary { background: var(--accent); color: #0e0e10; }
+    .btn-primary:hover { background: #fbbf24; }
+    .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--surface-hover); border-color: #3a3a3e; }
+
+    .hero-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3rem;
+      padding-top: 2.5rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .stat-number {
+      font-size: 2.2rem;
+      font-weight: 900;
+      letter-spacing: -0.05em;
+      line-height: 1;
+    }
+    .stat-number span { color: var(--accent); }
+    .stat-label { font-size: 0.8rem; color: var(--text-dim); margin-top: 0.35rem; }
+
+    /* ── Demo ────────────────────────────────────────── */
+    #demo { border-top: 1px solid var(--border); }
+
+    .demo-wrapper {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      background: var(--surface);
+    }
+
+    .demo-bar {
+      background: #111113;
+      padding: 0.75rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .demo-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+    .demo-dot:nth-child(1) { background: #ff5f57; }
+    .demo-dot:nth-child(2) { background: #ffbd2e; }
+    .demo-dot:nth-child(3) { background: #28c840; }
+    .demo-label {
+      margin-left: 0.75rem;
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+
+    .demo-gif {
+      width: 100%;
+      display: block;
+    }
+
+    /* ── Pipeline ────────────────────────────────────── */
+    #pipeline { border-top: 1px solid var(--border); }
+
+    .pipeline-flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0;
+      margin-bottom: 3rem;
+    }
+
+    .pipeline-step {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      min-width: 150px;
+      transition: border-color 0.2s;
+    }
+    .pipeline-step:hover { border-color: rgba(245, 158, 11, 0.4); }
+    .pipeline-step-icon { font-size: 1.4rem; margin-bottom: 0.4rem; }
+    .pipeline-step-name {
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .pipeline-step-desc {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      margin-top: 0.2rem;
+      line-height: 1.4;
+    }
+
+    .pipeline-arrow {
+      color: var(--accent);
+      font-size: 1.1rem;
+      padding: 0 0.5rem;
+      flex-shrink: 0;
+    }
+
+    /* ── Features ────────────────────────────────────── */
+    #features { border-top: 1px solid var(--border); }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.75rem;
+      transition: border-color 0.2s, transform 0.25s;
+    }
+    .feature-card:hover { border-color: #3a3a3e; transform: translateY(-3px); }
+
+    .feature-icon {
+      width: 46px;
+      height: 46px;
+      border-radius: 12px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(245, 158, 11, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      margin-bottom: 1.1rem;
+    }
+
+    .feature-title {
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.45rem;
+    }
+
+    .feature-desc {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      line-height: 1.65;
+    }
+
+    /* ── Stack ───────────────────────────────────────── */
+    #stack { border-top: 1px solid var(--border); }
+
+    .stack-groups {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      gap: 2.5rem;
+    }
+
+    .stack-group-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 1rem;
+    }
+
+    .stack-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+
+    .stack-chip {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      font-weight: 500;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+    }
+
+    /* ── Footer ──────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem;
+      text-align: center;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+    }
+    footer a { color: var(--accent); }
+    footer a:hover { text-decoration: underline; }
+
+    /* ── Fade-in ─────────────────────────────────────── */
+    .fade-in {
+      opacity: 0;
+      transform: translateY(18px);
+      transition: opacity 0.55s ease, transform 0.55s ease;
+    }
+    .fade-in.visible { opacity: 1; transform: none; }
+
+    /* ── Mobile ──────────────────────────────────────── */
+    @media (max-width: 640px) {
+      main { padding: 0 1.25rem; }
+      nav { padding: 0 1.25rem; }
+      section { padding: 2.25rem 0; }
+      #hero { padding: 3rem 0 2rem; min-height: auto; }
+      .hero-stats { gap: 2rem; }
+      .hide-mobile { display: none; }
+      .pipeline-flow { flex-direction: column; align-items: flex-start; }
+      .pipeline-arrow { transform: rotate(90deg); padding: 0.25rem 0; }
+      .features-grid { grid-template-columns: 1fr; }
+      .stack-groups { grid-template-columns: 1fr 1fr; gap: 1.75rem; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <div class="nav-name">📈 Trading<span>Expert</span></div>
+    <div class="nav-links">
+      <a href="#demo" class="hide-mobile">Demo</a>
+      <a href="#pipeline" class="hide-mobile">Pipeline</a>
+      <a href="#features" class="hide-mobile">Features</a>
+      <a href="https://sinnup.github.io" class="hide-mobile">← Portfolio</a>
+      <a href="https://github.com/Sinnup/trading-expert" target="_blank" rel="noopener" class="icon-link" aria-label="GitHub">
+        <svg viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+      </a>
+    </div>
+  </div>
+</nav>
+
+<main>
+
+  <!-- HERO -->
+  <section id="hero">
+    <div class="hero-eyebrow">AI / Data · Personal Project</div>
+    <h1 class="hero-name">Trading<br><span class="accent">Expert.</span></h1>
+    <p class="hero-pitch">
+      Monitors financial news across two markets — US semiconductors and Mexican BMV stocks — analyzes sentiment with DeepSeek AI, maps supply chain ripple effects, and delivers real-time trading signals via Telegram.
+    </p>
+    <div class="hero-ctas">
+      <a href="https://github.com/Sinnup/trading-expert" target="_blank" rel="noopener" class="btn btn-primary">View on GitHub →</a>
+      <a href="#demo" class="btn btn-secondary">See demo</a>
+      <a href="#pipeline" class="btn btn-secondary">How it works</a>
+    </div>
+    <div class="hero-stats">
+      <div>
+        <div class="stat-number">2<span></span></div>
+        <div class="stat-label">Markets (US + BMV)</div>
+      </div>
+      <div>
+        <div class="stat-number">29<span>+</span></div>
+        <div class="stat-label">Tickers tracked</div>
+      </div>
+      <div>
+        <div class="stat-number">4<span></span></div>
+        <div class="stat-label">ML-weighted signal factors</div>
+      </div>
+      <div>
+        <div class="stat-number">R1<span></span></div>
+        <div class="stat-label">DeepSeek reasoning model</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DEMO -->
+  <section id="demo">
+    <span class="section-label">Demo</span>
+    <h2>Live in Telegram</h2>
+    <div class="demo-wrapper fade-in">
+      <div class="demo-bar">
+        <div class="demo-dot"></div>
+        <div class="demo-dot"></div>
+        <div class="demo-dot"></div>
+        <span class="demo-label">Trading Expert Bot — Telegram</span>
+      </div>
+      <img
+        class="demo-gif"
+        src="https://github.com/Sinnup/trading-expert/releases/download/v0.2.0/Trading.expert.gif"
+        alt="Trading Expert Telegram bot demo — signal alerts and AI-powered chat"
+        loading="lazy"
+      >
+    </div>
+  </section>
+
+  <!-- PIPELINE -->
+  <section id="pipeline">
+    <span class="section-label">Architecture</span>
+    <h2>Signal Pipeline</h2>
+
+    <div class="pipeline-flow fade-in">
+      <div class="pipeline-step">
+        <div class="pipeline-step-icon">📰</div>
+        <div class="pipeline-step-name">News Sources</div>
+        <div class="pipeline-step-desc">RSS, NewsAPI, GNews</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+      <div class="pipeline-step">
+        <div class="pipeline-step-icon">🔍</div>
+        <div class="pipeline-step-name">VADER Prefilter</div>
+        <div class="pipeline-step-desc">Keyword + sentiment gate</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+      <div class="pipeline-step">
+        <div class="pipeline-step-icon">🧠</div>
+        <div class="pipeline-step-name">DeepSeek AI</div>
+        <div class="pipeline-step-desc">deepseek-chat + R1 escalation</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+      <div class="pipeline-step">
+        <div class="pipeline-step-icon">📊</div>
+        <div class="pipeline-step-name">Signal Scorer</div>
+        <div class="pipeline-step-desc">AI · Volume · Credibility · Price</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+      <div class="pipeline-step">
+        <div class="pipeline-step-icon">🔗</div>
+        <div class="pipeline-step-name">Cascade Engine</div>
+        <div class="pipeline-step-desc">Supply chain graph propagation</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+      <div class="pipeline-step">
+        <div class="pipeline-step-icon">📲</div>
+        <div class="pipeline-step-name">Telegram Alert</div>
+        <div class="pipeline-step-desc">Push + interactive chat</div>
+      </div>
+    </div>
+
+    <div class="features-grid fade-in" style="margin-top: 0.5rem;">
+      <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.4rem;">
+        <div class="section-label" style="margin-bottom: 0.6rem;">Semiconductor · US</div>
+        <div style="font-size: 0.875rem; color: var(--text-muted); line-height: 1.65;">
+          29 tickers — NVDA, TSMC, ASML, AMD, Intel, Qualcomm and their supply chain. Runs every 15 min. Cascade reasoning enabled: a signal on NVDA can fire secondaries on TSMC, ASML, and competitors.
+        </div>
+      </div>
+      <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.4rem;">
+        <div class="section-label" style="margin-bottom: 0.6rem;">BMV · Mexico</div>
+        <div style="font-size: 0.875rem; color: var(--text-muted); line-height: 1.65;">
+          Mexican stock exchange tickers analyzed in Spanish. Runs every 30 min. Independent pipeline — no cross-sector cascade since BMV spans unrelated industries.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features">
+    <span class="section-label">Capabilities</span>
+    <h2>Features</h2>
+    <div class="features-grid">
+
+      <div class="feature-card fade-in">
+        <div class="feature-icon">🧠</div>
+        <div class="feature-title">DeepSeek Sentiment Analysis</div>
+        <div class="feature-desc">Every article is analyzed via function calling on <code style="font-size:0.8em; background:rgba(255,255,255,0.06); padding:0.1em 0.35em; border-radius:4px;">deepseek-chat</code>. High-conviction articles escalate to <code style="font-size:0.8em; background:rgba(255,255,255,0.06); padding:0.1em 0.35em; border-radius:4px;">deepseek-reasoner</code> (R1) for chain-of-thought analysis.</div>
+      </div>
+
+      <div class="feature-card fade-in">
+        <div class="feature-icon">🔗</div>
+        <div class="feature-title">Supply Chain Cascade</div>
+        <div class="feature-desc">A directed graph of supplier/customer/competitor relationships. A primary signal on one ticker automatically fires secondary signals on impacted companies across the chain.</div>
+      </div>
+
+      <div class="feature-card fade-in">
+        <div class="feature-icon">🔄</div>
+        <div class="feature-title">Learning Loop</div>
+        <div class="feature-desc">Weekly logistic regression on graded signal outcomes. Fitted factor importances are normalized into suggested weights and applied as a per-universe overlay — the model learns from its own calls.</div>
+      </div>
+
+      <div class="feature-card fade-in">
+        <div class="feature-icon">💬</div>
+        <div class="feature-title">Telegram Chat Advisor</div>
+        <div class="feature-desc">Free-text messages in Telegram are answered by DeepSeek-R1 with access to your live portfolio snapshot. Conversation history per chat, with a system prompt that keeps it on-topic.</div>
+      </div>
+
+      <div class="feature-card fade-in">
+        <div class="feature-icon">💼</div>
+        <div class="feature-title">Paper Trading Portfolio</div>
+        <div class="feature-desc">Conviction-weighted position sizing with mark-to-market P&amp;L. Tracks signal outcomes at 1d, 7d, and 90d horizons to measure alpha decay and feed the calibration loop.</div>
+      </div>
+
+      <div class="feature-card fade-in">
+        <div class="feature-icon">⚙️</div>
+        <div class="feature-title">Celery Task Scheduler</div>
+        <div class="feature-desc">Beat schedule drives both pipelines independently — 15-min intraday for semiconductors, 30-min for BMV, daily summaries, and weekly weight recalibration. Deployed with Docker Compose + Redis.</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- STACK -->
+  <section id="stack">
+    <span class="section-label">Built with</span>
+    <h2>Tech Stack</h2>
+    <div class="stack-groups">
+      <div class="fade-in">
+        <div class="stack-group-title">AI / ML</div>
+        <div class="stack-chips">
+          <span class="stack-chip">DeepSeek Chat</span>
+          <span class="stack-chip">DeepSeek R1</span>
+          <span class="stack-chip">VADER</span>
+          <span class="stack-chip">scikit-learn</span>
+          <span class="stack-chip">numpy</span>
+        </div>
+      </div>
+      <div class="fade-in">
+        <div class="stack-group-title">Backend</div>
+        <div class="stack-chips">
+          <span class="stack-chip">Python</span>
+          <span class="stack-chip">Celery</span>
+          <span class="stack-chip">Redis</span>
+          <span class="stack-chip">SQLAlchemy</span>
+          <span class="stack-chip">SQLite</span>
+          <span class="stack-chip">httpx</span>
+        </div>
+      </div>
+      <div class="fade-in">
+        <div class="stack-group-title">Data</div>
+        <div class="stack-chips">
+          <span class="stack-chip">yfinance</span>
+          <span class="stack-chip">NewsAPI</span>
+          <span class="stack-chip">GNews</span>
+          <span class="stack-chip">RSS feeds</span>
+          <span class="stack-chip">pandas</span>
+        </div>
+      </div>
+      <div class="fade-in">
+        <div class="stack-group-title">Infra</div>
+        <div class="stack-chips">
+          <span class="stack-chip">Docker</span>
+          <span class="stack-chip">Docker Compose</span>
+          <span class="stack-chip">uv</span>
+          <span class="stack-chip">pytest</span>
+        </div>
+      </div>
+      <div class="fade-in">
+        <div class="stack-group-title">Delivery</div>
+        <div class="stack-chips">
+          <span class="stack-chip">Telegram Bot API</span>
+          <span class="stack-chip">python-telegram-bot</span>
+          <span class="stack-chip">Webhook push</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Trading Expert · Sinué Flores · 2026 ·
+  <a href="https://sinnup.github.io">Portfolio</a> ·
+  <a href="https://github.com/Sinnup/trading-expert" target="_blank" rel="noopener">GitHub</a>
+</footer>
+
+<script>
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('visible');
+        observer.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.08 });
+
+  document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+</script>
+
+</body>
+</html>
