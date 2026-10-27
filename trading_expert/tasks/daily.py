@@ -8,8 +8,8 @@ from celery import shared_task
 
 from trading_expert.models import get_session, init_db
 from trading_expert.models.signal import Signal
-from trading_expert.models.portfolio import SignalOutcome
 from trading_expert.fetchers.prices import PriceFetcher
+from trading_expert.portfolio.backtest import grade_signal_outcomes
 from trading_expert.notifications.telegram import TelegramNotifier
 from trading_expert.analysis.signals import signal_label
 
@@ -78,8 +78,8 @@ async def _daily_summary_async():
 def check_signal_outcomes(self):
     """Check past signals against actual price movements.
 
-    Runs once per day. For signals that are 7, 30, or 90 days old,
-    fetches current prices and records whether the direction was correct.
+    Runs once per day. Records each signal's 1/7/30/90-day close (the close on
+    the horizon date, from daily history) and whether the direction was correct.
     """
     logger.info("Checking signal outcomes...")
     return asyncio.run(_check_outcomes_async())
@@ -92,79 +92,7 @@ async def _check_outcomes_async():
     price_fetcher = PriceFetcher()
 
     try:
-        # Grab signals old enough for at least the 1-day snapshot. The task runs
-        # daily, so a signal crossing each window is snapshotted at ~that age;
-        # the 1-day capture is what lets calibration measure alpha decay, so we
-        # can't wait for the 7-day cutoff to start looking.
-        cutoff = datetime.now(timezone.utc) - timedelta(days=1)
-        signals = (
-            session.query(Signal)
-            .filter(Signal.created_at < cutoff)
-            .filter(Signal.is_active == True)
-            .order_by(Signal.created_at.asc())
-            .limit(200)
-            .all()
-        )
-
-        outcomes_checked = 0
-        for signal in signals:
-            existing = (
-                session.query(SignalOutcome)
-                .filter(SignalOutcome.signal_id == signal.id)
-                .first()
-            )
-
-            # Which windows still need a snapshot?
-            days_since = (datetime.now(timezone.utc) - signal.created_at).days
-            needs_1d = days_since >= 1 and (not existing or existing.price_1d is None)
-            needs_7d = days_since >= 7 and (not existing or existing.price_7d is None)
-            needs_30d = days_since >= 30 and (not existing or existing.price_30d is None)
-            needs_90d = days_since >= 90 and (not existing or existing.price_90d is None)
-
-            if not any([needs_1d, needs_7d, needs_30d, needs_90d]):
-                continue
-
-            # Get current price — used as the snapshot for whichever window the
-            # signal is currently crossing (daily cadence keeps this close).
-            price = await price_fetcher.get_current(signal.ticker)
-            if not price:
-                continue
-
-            if existing is None:
-                outcome = SignalOutcome(
-                    signal_id=signal.id,
-                    ticker=signal.ticker,
-                    signal_score=signal.score,
-                    price_at_signal=signal.price_at_signal or 0,
-                )
-                session.add(outcome)
-                session.flush()
-            else:
-                outcome = existing
-
-            base = signal.price_at_signal
-            for needed, price_attr, return_attr in (
-                (needs_1d, "price_1d", "return_1d_pct"),
-                (needs_7d, "price_7d", "return_7d_pct"),
-                (needs_30d, "price_30d", "return_30d_pct"),
-                (needs_90d, "price_90d", "return_90d_pct"),
-            ):
-                if not needed:
-                    continue
-                setattr(outcome, price_attr, price.close)
-                if base:
-                    setattr(outcome, return_attr, (price.close - base) / base * 100)
-
-            # Grade direction off the 7-day return once available.
-            if outcome.return_7d_pct is not None:
-                if signal.action == "buy":
-                    outcome.was_correct = outcome.return_7d_pct > 0
-                elif signal.action == "sell":
-                    outcome.was_correct = outcome.return_7d_pct < 0
-
-            outcome.outcome_checked_at = datetime.now(timezone.utc)
-            outcomes_checked += 1
-
+        outcomes_checked = await grade_signal_outcomes(session, price_fetcher)
         session.commit()
         logger.info(f"Outcomes checked: {outcomes_checked} signals updated")
         return {"status": "ok", "outcomes_checked": outcomes_checked}

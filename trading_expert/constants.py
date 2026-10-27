@@ -106,3 +106,18 @@ DEFAULT_MAX_POSITION_FRACTION: float = 0.15      # never more than 15% of equity
 # Legacy flat clip — retained only as a fallback floor reference; no longer the
 # primary sizing path.
 PAPER_TRADE_SIZE: float = 1000.0
+
+# ── Signal outcome grading ───────────────────────────────────────────────────
+# Calendar-day horizons at which a signal's price outcome is recorded, mapped
+# to the SignalOutcome (price, return) columns they fill. Direction is graded
+# off GRADING_HORIZON_DAYS.
+OUTCOME_HORIZONS: tuple[tuple[int, str, str], ...] = (
+    (1, "price_1d", "return_1d_pct"),
+    (7, "price_7d", "return_7d_pct"),
+    (30, "price_30d", "return_30d_pct"),
+    (90, "price_90d", "return_90d_pct"),
+)
+GRADING_HORIZON_DAYS: int = 7
+# A stored price_at_signal deviating more than this from the signal-date close
+# is treated as corrupt (e.g. another company's quote) and never graded.
+MAX_BASE_PRICE_DEVIATION: float = 0.25

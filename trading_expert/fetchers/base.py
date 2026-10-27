@@ -37,6 +37,7 @@ class PriceData:
     pe_ratio: Optional[float] = None
     market_cap: Optional[float] = None
     change_pct: float = 0.0  # Day-over-day change %
+    currency: str = "USD"  # Quote currency reported by Yahoo (e.g. MXN, TWD)
 
 
 class BaseFetcher(ABC):
