@@ -256,6 +256,16 @@ async def _intraday_fetch_bmv_async():
                 model=reasoner_model if use_reasoner else None,
             )
 
+            # Price the ticker DeepSeek actually signalled: it can differ from
+            # the first keyword-matched ticker (or sit outside the universe),
+            # and the signal's price, price confirmation and paper trade must
+            # all use that company's quote — not the matched ticker's.
+            signal_ticker = deepseek_signal.primary_ticker
+            if signal_ticker != primary_ticker:
+                if signal_ticker and signal_ticker not in prices:
+                    prices[signal_ticker] = await price_fetcher.get_current(signal_ticker)
+                price = prices.get(signal_ticker)
+
             # Compute source credibility from the article's source tier
             source_cred = SOURCE_TIER_CREDIBILITY.get(
                 article.source_tier, DEFAULT_SOURCE_CREDIBILITY
@@ -347,12 +357,22 @@ async def _intraday_fetch_bmv_async():
         # Execute paper trades for alert-triggering signals (signals committed above).
         if pending_paper_trades:
             portfolio = PaperPortfolio()
-            price_map = {t: p.close for t, p in prices.items() if p}
+            # The paper book is denominated in USD: convert every quote (MXN,
+            # TWD, KRW, ...) so cash, sizing and mark-to-market share one currency.
+            price_map = {}
+            for t, p in prices.items():
+                usd = await price_fetcher.to_usd(p) if p else None
+                if usd:
+                    price_map[t] = usd
             portfolio_cfg = settings.get("portfolio", {})
             alert_threshold = signals_cfg.get("thresholds", {}).get(
                 "strong_alert", DEFAULT_STRONG_ALERT_THRESHOLD
             )
-            for sig_id, ticker, action, price, score in pending_paper_trades:
+            for sig_id, ticker, action, _, score in pending_paper_trades:
+                price = price_map.get(ticker)
+                if not price:
+                    logger.info(f"PAPER {action.upper()} skipped: no USD price for {ticker}")
+                    continue
                 if action == ACTION_BUY:
                     # One open position per ticker: skip re-buying the same
                     # re-escalated news every cycle. A later sell frees the ticker.
