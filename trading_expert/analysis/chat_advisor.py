@@ -75,16 +75,37 @@ def format_wallet_context(summary: dict) -> str:
         f"Cash: ${summary['cash']:,.2f} | "
         f"Total P&L: ${summary['pnl_total']:,.2f} ({summary['pnl_pct']:+.2f}%)",
     ]
+    margins = [
+        f"{label}: {summary[key]:+.2f}%"
+        for key, label in (
+            ("realized_margin_pct", "Realized margin"),
+            ("unrealized_margin_pct", "Open-position margin"),
+            ("win_rate_pct", "Win rate"),
+        )
+        if summary.get(key) is not None
+    ]
+    if margins:
+        lines.append(" | ".join(margins))
     holdings = summary.get("holdings", {})
     if holdings:
         lines.append(f"Open positions ({len(holdings)}):")
         for ticker, pos in holdings.items():
             lines.append(
                 f"- {ticker}: {pos['quantity']:.0f} sh @ avg "
-                f"${pos['avg_price']:.2f} (last ${pos['current_price']:.2f})"
+                f"${pos['avg_price']:.2f} (last ${pos['current_price']:.2f}"
+                + (
+                    f", {pos['unrealized_pct']:+.2f}%)"
+                    if pos.get("unrealized_pct") is not None else ")"
+                )
             )
     else:
         lines.append("Open positions: none (100% cash).")
+    lines.append(
+        "Definitions (USD): Total P&L % = (realized + unrealized) / initial "
+        "capital; position % = (last - avg) / avg; realized margin = realized "
+        "P&L / cost of closed lots; open-position margin = unrealized P&L / "
+        "cost of open lots; win rate = closed lots with P&L > 0 / closed lots."
+    )
     return "\n".join(lines)
 
 # Telegram message size limit

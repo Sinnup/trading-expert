@@ -11,7 +11,9 @@ import logging
 from datetime import datetime, date, timezone
 from typing import Optional
 
+from trading_expert.analysis.returns import position_return_pct, profit_margin_pct
 from trading_expert.constants import TRADEABLE_ACTIONS
+from trading_expert.fetchers.prices import PriceFetcher
 from trading_expert.models import get_session
 from trading_expert.models.portfolio import PaperTrade, PortfolioSnapshot
 
@@ -247,7 +249,11 @@ class PaperPortfolio:
                 equity figure.
 
         Returns:
-            Dict with total_value, cash, holdings, pnl_total, pnl_pct.
+            Dict with total_value, cash, holdings, pnl_total, pnl_pct (return on
+            initial capital), realized/unrealized P&L, realized_margin_pct
+            (realized P&L / cost of closed lots), unrealized_margin_pct
+            (unrealized P&L / cost of open lots) and win_rate_pct (share of
+            closed lots with positive P&L). Margins are None with no basis.
         """
         session = get_session()
 
@@ -264,13 +270,6 @@ class PaperPortfolio:
                 .all()
             )
 
-            # Total spent
-            total_spent = sum(
-                (b.price * b.quantity)
-                for b in buys
-                if b.closed_at is None  # Only still-open buys
-            )
-            # Actually, we need: all buy cost - closed buy cost
             total_buy_cost = sum(b.price * b.quantity for b in buys)
             total_sell_proceeds = sum(s.price * s.quantity for s in sells)
 
@@ -295,7 +294,18 @@ class PaperPortfolio:
                 pos.get("unrealized_pnl", 0) for pos in holdings.values()
             )
             pnl_total = realized_pnl + unrealized_pnl
+            # Portfolio return on starting capital.
             pnl_pct = (pnl_total / self.initial_capital) * 100
+
+            # Profit margins on capital actually deployed.
+            closed_cost = sum(
+                b.price * b.quantity for b in buys if b.closed_at is not None
+            )
+            open_cost = sum(
+                pos["avg_price"] * pos["quantity"] for pos in holdings.values()
+            )
+            closed_lots = [b for b in buys if b.closed_at is not None]
+            winning_lots = sum(1 for b in closed_lots if (b.pnl_realized or 0) > 0)
 
             return {
                 "total_value": total_value,
@@ -305,6 +315,11 @@ class PaperPortfolio:
                 "pnl_pct": pnl_pct,
                 "realized_pnl": realized_pnl,
                 "unrealized_pnl": unrealized_pnl,
+                "realized_margin_pct": profit_margin_pct(realized_pnl, closed_cost),
+                "unrealized_margin_pct": profit_margin_pct(unrealized_pnl, open_cost),
+                "win_rate_pct": (
+                    winning_lots / len(closed_lots) * 100 if closed_lots else None
+                ),
             }
 
         finally:
@@ -334,6 +349,20 @@ class PaperPortfolio:
             return snapshot
         finally:
             session.close()
+
+    async def live_price_map(self, price_fetcher: PriceFetcher) -> dict[str, float]:
+        """USD quotes for every open position, for marking the book to market.
+
+        Tickers whose price or FX rate can't be fetched are omitted (they fall
+        back to cost basis in ``get_summary``).
+        """
+        price_map: dict[str, float] = {}
+        for ticker in self._get_all_positions():
+            quote = await price_fetcher.get_current(ticker)
+            usd = await price_fetcher.to_usd(quote) if quote else None
+            if usd:
+                price_map[ticker] = usd
+        return price_map
 
     def has_open_position(self, ticker: str) -> bool:
         """Whether an open (unclosed) long position exists for ``ticker``.
@@ -399,6 +428,9 @@ class PaperPortfolio:
                 pos["current_price"] = price_map.get(ticker, pos["avg_price"])
                 pos["unrealized_pnl"] = (
                     (pos["current_price"] - pos["avg_price"]) * pos["quantity"]
+                )
+                pos["unrealized_pct"] = position_return_pct(
+                    pos["avg_price"], pos["current_price"]
                 )
                 del pos["total_cost"]
 

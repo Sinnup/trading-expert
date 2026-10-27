@@ -308,6 +308,7 @@ def start_command_bot(
             ignored. If None/empty, the bot is unrestricted (a warning is
             logged) to preserve backwards-compatible behaviour.
     """
+    from trading_expert.fetchers.prices import PriceFetcher
     from telegram import Update
     from telegram.ext import (
         Application,
@@ -324,6 +325,19 @@ def start_command_bot(
 
     # ── Shared chat helper ───────────────────────────────────────────────────
 
+    async def _live_summary() -> dict:
+        """Portfolio summary marked to market with live USD quotes.
+
+        Without live prices open positions sit at cost basis, so unrealized
+        P&L would always read $0. Falls back to cost basis if quotes fail.
+        """
+        try:
+            price_map = await portfolio_tracker.live_price_map(PriceFetcher())
+        except Exception as e:
+            logger.warning("Live prices unavailable for portfolio: %s", e)
+            price_map = None
+        return portfolio_tracker.get_summary(price_map=price_map)
+
     async def _run_chat(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
         """Send message to advisor while streaming a typing indicator."""
         chat_id = update.effective_chat.id
@@ -337,7 +351,7 @@ def start_command_bot(
         # the user's own portfolio ("how's my wallet?") from real data. Best
         # effort: if it fails, the advisor still answers general questions.
         try:
-            portfolio_summary = portfolio_tracker.get_summary()
+            portfolio_summary = await _live_summary()
         except Exception as e:
             logger.warning("Could not load wallet snapshot for chat: %s", e)
             portfolio_summary = None
@@ -418,13 +432,16 @@ def start_command_bot(
     async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show paper trading portfolio."""
         try:
-            summary = portfolio_tracker.get_summary()
+            summary = await _live_summary()
             msg = format_portfolio_summary(
                 total_value=summary["total_value"],
                 cash=summary["cash"],
                 holdings=summary["holdings"],
                 pnl_total=summary["pnl_total"],
                 pnl_pct=summary["pnl_pct"],
+                realized_margin_pct=summary.get("realized_margin_pct"),
+                unrealized_margin_pct=summary.get("unrealized_margin_pct"),
+                win_rate_pct=summary.get("win_rate_pct"),
             )
             await update.message.reply_text(msg, parse_mode="HTML")
         except Exception as e:

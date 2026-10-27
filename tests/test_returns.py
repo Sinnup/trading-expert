@@ -30,7 +30,9 @@ from trading_expert.fetchers.prices import DailyHistory, PriceFetcher
 from trading_expert.models import get_session, init_db
 from trading_expert.models.portfolio import SignalOutcome
 from trading_expert.models.signal import Signal
+from trading_expert.notifications.formatter import format_portfolio_summary
 from trading_expert.portfolio.backtest import apply_outcome, grade_signal_outcomes
+from trading_expert.portfolio.tracker import PaperPortfolio
 
 
 # Mon 2026-06-01 .. Fri 2026-06-12 trading sessions (no weekend bars).
@@ -178,6 +180,36 @@ class TestGradeSignalOutcomes:
         session.close()
 
 
+class TestPortfolioMargins:
+    def test_summary_reports_margins_and_position_pct(self, db):
+        portfolio = PaperPortfolio()
+        portfolio.execute_buy("AMD", price=100.0, quantity=10)
+        portfolio.execute_sell("AMD", price=120.0, quantity=10)  # +200 on 1000
+        portfolio.execute_buy("NVDA", price=50.0, quantity=10)
+
+        summary = portfolio.get_summary(price_map={"NVDA": 45.0})  # -50 on 500
+        assert summary["realized_margin_pct"] == pytest.approx(20.0)
+        assert summary["unrealized_margin_pct"] == pytest.approx(-10.0)
+        assert summary["win_rate_pct"] == pytest.approx(100.0)
+        assert summary["holdings"]["NVDA"]["unrealized_pct"] == pytest.approx(-10.0)
+
+    def test_margins_none_without_basis(self, db):
+        summary = PaperPortfolio().get_summary()
+        assert summary["realized_margin_pct"] is None
+        assert summary["unrealized_margin_pct"] is None
+        assert summary["win_rate_pct"] is None
+
+    def test_live_price_map_converts_to_usd(self, db):
+        portfolio = PaperPortfolio()
+        portfolio.execute_buy("AXTELCPO.MX", price=1.0, quantity=10)
+        fetcher = FakeFetcher({
+            "AXTELCPO.MX": _price("AXTELCPO.MX", 4.0, "MXN"),
+            "MXNUSD=X": _price("MXNUSD=X", 0.05),
+        })
+        price_map = asyncio.run(portfolio.live_price_map(fetcher))
+        assert price_map == {"AXTELCPO.MX": pytest.approx(0.2)}
+
+
 class TestUsdConversion:
     def test_usd_passthrough(self):
         assert asyncio.run(FakeFetcher({}).to_usd(_price("NVDA", 10.0))) == 10.0
@@ -188,6 +220,20 @@ class TestUsdConversion:
 
     def test_missing_fx_rate(self):
         assert asyncio.run(FakeFetcher({}).to_usd(_price("2454.TW", 4000.0, "TWD"))) is None
+
+
+class TestPortfolioFormatter:
+    def test_position_shows_unrealized_pnl_and_margins(self):
+        msg = format_portfolio_summary(
+            total_value=99_950.0, cash=99_500.0,
+            holdings={"NVDA": {"quantity": 10, "avg_price": 50.0, "current_price": 45.0,
+                               "unrealized_pnl": -50.0, "unrealized_pct": -10.0}},
+            pnl_total=-50.0, pnl_pct=-0.05,
+            realized_margin_pct=20.0, unrealized_margin_pct=-10.0, win_rate_pct=100.0,
+        )
+        assert "$-50.00 (-10.00%)" in msg
+        assert "Realized margin: +20.00%" in msg
+        assert "Win rate: 100.0%" in msg
 
 
 class TestImplausibleBase:

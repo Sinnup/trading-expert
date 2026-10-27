@@ -263,8 +263,11 @@ def format_portfolio_summary(
     holdings: dict,
     pnl_total: float,
     pnl_pct: float,
+    realized_margin_pct: Optional[float] = None,
+    unrealized_margin_pct: Optional[float] = None,
+    win_rate_pct: Optional[float] = None,
 ) -> str:
-    """Format a portfolio summary message."""
+    """Format a portfolio summary message (all amounts in USD)."""
     pnl_emoji = "🟢" if pnl_total >= 0 else "🔴"
 
     lines = [
@@ -273,18 +276,27 @@ def format_portfolio_summary(
         f"💵 Total Value: ${total_value:,.2f}",
         f"🏦 Cash: ${cash:,.2f}",
         f"{pnl_emoji} Total P&amp;L: ${pnl_total:+,.2f} ({pnl_pct:+.2f}%)",
-        "",
     ]
+    if realized_margin_pct is not None:
+        lines.append(f"📈 Realized margin: {realized_margin_pct:+.2f}%")
+    if unrealized_margin_pct is not None:
+        lines.append(f"📊 Open positions margin: {unrealized_margin_pct:+.2f}%")
+    if win_rate_pct is not None:
+        lines.append(f"🎯 Win rate: {win_rate_pct:.1f}%")
+    lines.append("")
 
     if holdings:
         lines.append("<b>Positions:</b>")
         for ticker, pos in holdings.items():
-            pos_pnl = pos.get("pnl", 0)
+            pos_pnl = pos.get("unrealized_pnl", 0)
+            pos_pct = pos.get("unrealized_pct")
             pos_emoji = "🟢" if pos_pnl >= 0 else "🔴"
+            pct_text = f" ({pos_pct:+.2f}%)" if pos_pct is not None else ""
             lines.append(
                 f"  {pos_emoji} {ticker}: {pos.get('quantity', 0):.0f} shares "
-                f"@ ${pos.get('avg_price', 0):.2f} | "
-                f"P&L: ${pos_pnl:+,.2f}"
+                f"@ ${pos.get('avg_price', 0):.2f} → "
+                f"${pos.get('current_price', pos.get('avg_price', 0)):.2f} | "
+                f"P&amp;L: ${pos_pnl:+,.2f}{pct_text}"
             )
 
     return "\n".join(lines)
