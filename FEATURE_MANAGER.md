@@ -90,6 +90,38 @@
 
 ## Changelog
 
+### 0.5.0 — 2026-10-27
+
+**Price data, per-period returns & profit margins audit.** Formulas documented for agents in
+`.claude/skills/price-return-formulas/SKILL.md`; implemented once in `analysis/returns.py`.
+
+**fix(backtest)**: `check-signal-outcomes` crashed every run (`can't subtract offset-naive and
+offset-aware datetimes` — SQLite returns naive `created_at`), so `signal_outcomes` was empty and the
+weekly recalibration never had data. Grading now (a) normalizes to UTC, (b) records the close of the
+first completed session on/after `signal date + N` (1/7/30/90 days) from daily history instead of
+whatever the price is when the job runs, (c) converts split-adjusted closes back to the signal's
+share basis, (d) only loads signals with a horizon still open (the old `oldest 200` query would
+starve new signals) and fetches history once per ticker, and (e) skips signals whose
+`price_at_signal` deviates >25% from the signal-date close (corrupt base). `BacktestEngine` reuses it.
+
+**fix(signals)**: The quote used for `price_at_signal`, price confirmation and paper trades came from
+the first keyword-matched ticker, not the ticker DeepSeek signalled (~2k signals and 13 traded names,
+e.g. KEY/ANET/JD, carried another company's price). Both intraday tasks now price the signalled ticker.
+
+**fix(portfolio)**: The USD paper book mixed currencies (MXN, TWD, KRW quotes booked as USD). Trade
+prices and marks are now converted with `PriceFetcher.to_usd` (`{CUR}USD=X`). `get_current` uses a 5d
+window, tolerates NaN volume and missing fundamentals, and reports `currency`.
+
+**feat(portfolio)**: `get_summary` adds `realized_margin_pct`, `unrealized_margin_pct`, `win_rate_pct`
+and per-position `unrealized_pct`. Telegram `/portfolio` and the chat advisor now mark positions to
+live USD prices (previously cost basis → $0 unrealized) and the per-position P&L no longer always
+reads $0 (wrong dict key).
+
+**test**: 127 tests passing (24 new in `tests/test_returns.py`).
+
+> Existing trades booked before this fix (2454.TW, AXTELCPO.MX in local currency; names priced with
+> another ticker's quote) remain in `paper_trades` as-is.
+
 ### 0.4.0 — 2026-09-29
 
 **Capital deployment & profits** — kill the cash drag from flat $1k clips.

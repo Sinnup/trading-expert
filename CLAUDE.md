@@ -95,6 +95,10 @@ All magic numbers (clamps, scale factors, label bands) live in `trading_expert/c
 
 Every scored signal persists its normalized factor breakdown in `Signal.factors` (JSON). `analysis/calibration.py` reads graded `signal_outcomes` and fits a numpy logistic regression predicting whether a signal's directional call was correct, reporting discrimination (AUC), calibration (Brier + reliability bins), and alpha decay (`return_1d` vs `return_7d`). Fitted factor importances are normalized into suggested weights and saved as a per-universe overlay at `data/learned_weights_<universe>.json` (config YAML stays the pristine default; the overlay is merged on top by both intraday tasks via `merge_weights`). Run manually with `trading-agent calibrate [--apply]`; the `recalibrate-weights` Celery beat task refits weekly and auto-applies when AUC > 0.5.
 
+### Prices, Returns & Margins
+
+Quotes come from yfinance (`fetchers/prices.py`). Signal outcomes are graded at 1/7/30/90 calendar days from daily history (`portfolio/backtest.py: grade_signal_outcomes`); the paper book is in USD and reports P&L plus realized/open profit margins. Every formula lives in `analysis/returns.py` and is documented in the **`price-return-formulas`** skill (`.claude/skills/price-return-formulas/SKILL.md`) — load it before touching any price, return or P&L number.
+
 ### Supply Chain Cascade
 
 `SupplyChainGraph` (`analysis/cascade.py`) is a directed graph loaded from `config/companies.yaml` under the `supply_chain` key. Edges encode `depends_on`, `supplies_to`, and `competes_with` relationships. When a primary signal fires, the cascade engine generates secondary `FinalSignal` objects for impacted companies with `cascade_source=True` and `cascade_parent` set to the triggering ticker.
@@ -164,4 +168,4 @@ See `.claude/agents/` for role-specific instructions:
 
 ## Feature Tracking
 
-See `FEATURE_MANAGER.md` for full backlog and changelog. All 6 phases (Foundation → Notifications → Scheduling → Docs) are complete. Current version: 0.2.0.
+See `FEATURE_MANAGER.md` for full backlog and changelog. All 6 phases (Foundation → Notifications → Scheduling → Docs) are complete. Current version: 0.5.0.
