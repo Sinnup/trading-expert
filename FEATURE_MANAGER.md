@@ -119,8 +119,13 @@ reads $0 (wrong dict key).
 
 **test**: 127 tests passing (24 new in `tests/test_returns.py`).
 
-> Existing trades booked before this fix (2454.TW, AXTELCPO.MX in local currency; names priced with
-> another ticker's quote) remain in `paper_trades` as-is.
+> **Data repair (2026-10-27)**: pre-fix `paper_trades` were checked against Yahoo 1h bars of the traded
+> ticker. 30 buy lots booked at another company's quote (e.g. AMD @ $11.82, KEY, MNKD, PLTR, SNDK, ZM)
+> were deleted together with the 19 sells that only closed them; 2454.TW and AXTELCPO.MX were
+> converted to USD at the hourly FX close. Realized P&L went from a fictitious +$48,411 to −$1,826
+> (total ≈ −1.2%). Cash is now −$17,685: open positions had been sized off the inflated equity, so the
+> book is temporarily leveraged and sizing blocks new buys until sells free cash. Pre-repair backup:
+> `data/trading-backup-20261027-pre-trade-fix.db`.
 
 ### 0.4.0 — 2026-09-29
 
