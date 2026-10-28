@@ -90,6 +90,12 @@
 
 ## Changelog
 
+### 0.5.1 — 2026-10-27
+
+**fix(cli)**: `watch`, `daily`, `portfolio` and `backtest` crashed with `KeyError: None` when run
+without `--universe` (the docker `app` service runs `cli watch` with no flags). They now default to
+the semiconductor universe like `analyze`/`signals`. New `tests/test_cli.py` (133 tests passing).
+
 ### 0.5.0 — 2026-10-27
 
 **Price data, per-period returns & profit margins audit.** Formulas documented for agents in

@@ -80,7 +80,7 @@ def _load_universe_config(universe: str):
 
 
 @click.group()
-@click.version_option(version="0.5.0", prog_name="trading-expert")
+@click.version_option(version="0.5.1", prog_name="trading-expert")
 def cli():
     """Trading Expert — AI-powered trading advisor for semiconductor and BMV stocks.
 
@@ -157,6 +157,7 @@ def watch(universe: str):
     Fetches news every 30 minutes, runs analysis, and sends alerts.
     Uses Celery workers for background processing.
     """
+    universe = _detect_universe(None, universe)
     if universe == "all":
         click.echo("👀 Starting intraday monitoring for ALL universes...")
     else:
@@ -180,6 +181,7 @@ def daily(universe: str):
     Aggregates all signals from the day, ranks tickers,
     and sends a comprehensive report via Telegram.
     """
+    universe = _detect_universe(None, universe)
     if universe == "all":
         click.echo("📊 Running daily summary for ALL universes...")
     else:
@@ -220,6 +222,7 @@ def signals(ticker: str | None, days: int, universe: str):
 )
 def portfolio(universe: str):
     """Show paper trading portfolio performance."""
+    universe = _detect_universe(None, universe)
     if universe == "all":
         click.echo("💰 Paper Trading Portfolio (All Universes):")
     else:
@@ -238,6 +241,7 @@ def portfolio(universe: str):
 )
 def backtest(days: int, universe: str):
     """Check signal accuracy over the last N days."""
+    universe = _detect_universe(None, universe)
     if universe == "all":
         click.echo(f"📐 Backtesting ALL universes from last {days} days...")
     else:

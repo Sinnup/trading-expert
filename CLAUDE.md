@@ -168,4 +168,4 @@ See `.claude/agents/` for role-specific instructions:
 
 ## Feature Tracking
 
-See `FEATURE_MANAGER.md` for full backlog and changelog. All 6 phases (Foundation → Notifications → Scheduling → Docs) are complete. Current version: 0.5.0.
+See `FEATURE_MANAGER.md` for full backlog and changelog. All 6 phases (Foundation → Notifications → Scheduling → Docs) are complete. Current version: 0.5.1.
